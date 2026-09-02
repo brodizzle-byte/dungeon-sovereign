@@ -1,0 +1,9 @@
+.git-credentials
+.gemini/
+.cache/
+.npm/
+.bubblewrap/
+.local/
+.bash_history
+.bashrc
+.profile
