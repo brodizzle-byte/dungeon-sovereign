@@ -1444,6 +1444,10 @@
     /* ================================================================
        6. PROCEDURAL DUNGEON GENERATOR WITH STRICT SAFETY CAPS
        ================================================================ */
+    // How much of a knockback impulse survives one second: 0.25% of it.
+    // Low enough that a shove is over in about half a second and never
+    // turns into skating.
+    const KNOCK_DRAG = 0.0025;
     const MAP_SIZE = 32;
     const TILE_SIZE = 32;
     const WORLD_SIZE = MAP_SIZE * TILE_SIZE;
@@ -2900,7 +2904,7 @@
               isMidasCurse: (wpn.traitId === 'midas_curse')
             });
           }
-          this.screenShake = 0.2;
+          this.addTrauma(0.2, angle);
         } else if (this.player.classData.id === 'assassin') {
           SFX.daggerStab();
           this.triggerWeaponAnimation(angle, wpnArc, wpnRange, this.player.atk * 1.15 * dmgMultiplier, this.player.auraState === 'DIABETIC_RAGE' ? '#f59e0b' : (wpn.color || '#c084fc'));
@@ -2989,16 +2993,15 @@
               if (isStaggerWeapon) {
                 enemy.stunTimer = 0.5;
                 enemy.attackCd = Math.max(enemy.attackCd || 0, 0.5);
-                enemy.x += Math.cos(centerAngle) * 35;
-                enemy.y += Math.sin(centerAngle) * 35;
+                this.knockback(enemy, centerAngle, 35);
+                this.hitStopTimer = Math.max(this.hitStopTimer, 5 / 60);
+                this.addTrauma(0.6, centerAngle);
                 this.spawnFloatingText(enemy.x, enemy.y, 'STUN (0.5s)', '#fbbf24', 13);
               }
 
               // Trait: Wide Cleave Knockback (+15% knockback)
               if (wpn.type === 'greatsword' || wpn.traitId === 'heavy_cleave') {
-                const kb = 28 * 1.15;
-                enemy.x += Math.cos(centerAngle) * kb;
-                enemy.y += Math.sin(centerAngle) * kb;
+                this.knockback(enemy, centerAngle, 28 * 1.15);
               }
 
               // Trait: Life Leech (30% chance to restore 3 HP on hit)
@@ -3057,8 +3060,7 @@
 
               // Trait: Vortex Pull (Pull enemy 25px toward player)
               if (wpn.traitId === 'vortex_pull') {
-                enemy.x -= Math.cos(centerAngle) * 25;
-                enemy.y -= Math.sin(centerAngle) * 25;
+                this.knockback(enemy, centerAngle + Math.PI, 25);
               }
 
               enemy.hp -= dmg;
@@ -3099,8 +3101,7 @@
                 this.spawnFloatingText(enemy.x, enemy.y, `${dmg}`, '#ffffff', 13);
               }
 
-              enemy.x += Math.cos(centerAngle) * 12;
-              enemy.y += Math.sin(centerAngle) * 12;
+              this.knockback(enemy, centerAngle, 12);
 
               if (enemy.hp <= 0) this.onEnemyKilled(enemy);
             }
@@ -3290,12 +3291,16 @@
           });
         }
 
-        if (isCrit) {
-          this.hitStopTimer = 0.025; // Subtle 25ms screen hit-stop
-          this.screenShake = 1.0;
-        } else {
-          this.screenShake = 0.4;
-        }
+        // Freeze whole FRAMES, never fractions of one: the server counts
+        // ticks, and a freeze that ends mid-tick would put the two
+        // simulations on different sides of the same frame. The tick still
+        // happens and still counts - it just skips its update.
+        // One frame on a normal connect is enough to read as weight; four
+        // on a crit is the pause you actually feel. Any more than that on
+        // an ordinary hit and a fast weapon spends a quarter of the fight
+        // frozen.
+        this.hitStopTimer = Math.max(this.hitStopTimer, (isCrit ? 4 : 1) / 60);
+        this.addTrauma(isCrit ? 0.85 : 0.35, strikeAngle);
       }
 
       // How fast this hostile actually moves right now. Pass `base` when
@@ -3303,6 +3308,42 @@
       // applies to that too. Keep every movement read going through here:
       // enemy.speed is the BASE, and writing an effect straight onto it
       // fights with the archetypes that reassign speed each frame.
+      // Push something instead of teleporting it. The impulse lands on
+      // kx/ky and drains over about half a second, so a hit reads as force
+      // rather than a change of address. `px` is how far the old code
+      // moved the target instantly; the 6 converts that distance into the
+      // starting velocity that covers it under KNOCK_DRAG.
+      knockback(e, angle, px) {
+        e.kx = (e.kx || 0) + Math.cos(angle) * px * 6;
+        e.ky = (e.ky || 0) + Math.sin(angle) * px * 6;
+      }
+
+      // Drain that impulse, one entity, one tick. Per-axis wall tests, the
+      // same ones the AI moves with: before this, five of the seven
+      // knockbacks in the game skipped the wall check entirely and could
+      // shove an enemy into solid rock.
+      stepKnockback(e, dt) {
+        if (!e.kx && !e.ky) return;
+        const nx = e.x + e.kx * dt;
+        const ny = e.y + e.ky * dt;
+        if (this.dungeon && this.dungeon.isWall(nx, e.y)) e.kx = 0; else e.x = nx;
+        if (this.dungeon && this.dungeon.isWall(e.x, ny)) e.ky = 0; else e.y = ny;
+        const drag = Math.pow(KNOCK_DRAG, dt);
+        e.kx *= drag;
+        e.ky *= drag;
+        if (Math.abs(e.kx) < 1) e.kx = 0;
+        if (Math.abs(e.ky) < 1) e.ky = 0;
+      }
+
+      // Trauma, not a jitter. It accumulates, decays on its own clock, and
+      // remembers WHICH WAY the hit came from so the camera kicks along
+      // that axis instead of vibrating in place. Kept on `screenShake`
+      // because the bridge resets that field by name at the start of a run.
+      addTrauma(amount, angle) {
+        this.screenShake = Math.min(1, (this.screenShake || 0) + amount);
+        if (angle != null) this.shakeAngle = angle;
+      }
+
       moveSpeed(e, base) {
         const spd = (base == null) ? e.speed : base;
         return (e.slowTimer > 0) ? spd * (e.slowMul || 0.75) : spd;
@@ -3319,7 +3360,7 @@
           if (Math.random() < 0.08) {
             SFX.hit();
             triggerHaptic('heavy');
-            this.screenShake = 0.35;
+            this.addTrauma(0.35, Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x));
           }
           this.updateHUD();
           if (this.player.hp <= 0) {
@@ -3541,6 +3582,10 @@
           }
         }
 
+        // Knockback rides on top of whatever the player did this tick,
+        // so being shoved does not cancel their control - it fights it.
+        this.stepKnockback(this.player, dt);
+
         // Clamp inside map boundaries
         this.player.x = Math.max(20, Math.min(WORLD_SIZE - 20, this.player.x));
         this.player.y = Math.max(20, Math.min(WORLD_SIZE - 20, this.player.y));
@@ -3617,7 +3662,7 @@
                 this.runStats.maxHit = Math.max(this.runStats.maxHit, dmg);
                 SFX.hit();
                 triggerHaptic('hit');
-                this.screenShake = 0.4;
+                this.addTrauma(0.4, Math.atan2(p.vy, p.vx));
                 this.spawnFloatingText(enemy.x, enemy.y, `${dmg}`, '#ffffff', 14);
 
                 // Rich Blood Burst & Decals
@@ -3831,6 +3876,10 @@
           if (enemy.hpFadeTimer > 0) enemy.hpFadeTimer -= dt;
           if (enemy.attackCd > 0) enemy.attackCd -= dt;
           if (enemy.strafeTimer > 0) enemy.strafeTimer = Math.max(0, enemy.strafeTimer - dt);
+
+          // Before the stun check on purpose: being stunned is exactly when
+          // a hostile should still be sliding from the hit that stunned it.
+          this.stepKnockback(enemy, dt);
 
           // Status Effect Ticks
           if (enemy.stunTimer > 0) {
@@ -4107,10 +4156,9 @@
                   // Forward knockback bash across gap
                   if (distToTarget <= 52) {
                     this.applyEnemyMeleeHit(enemy, dt, 1.4);
-                    const pbx = this.player.x + Math.cos(angleToTarget) * 50;
-                    const pby = this.player.y + Math.sin(angleToTarget) * 50;
-                    if (!this.dungeon.isWall(pbx, this.player.y)) this.player.x = pbx;
-                    if (!this.dungeon.isWall(this.player.x, pby)) this.player.y = pby;
+                    this.knockback(this.player, angleToTarget, 50);
+                    this.hitStopTimer = Math.max(this.hitStopTimer, 3 / 60);
+                    this.addTrauma(0.7, angleToTarget);
                     this.spawnFloatingText(this.player.x, this.player.y, 'KNOCKBACK BASH!', '#38bdf8', 13);
                   }
                 }
@@ -4421,9 +4469,11 @@
           if (this.bloodDecals[b].life <= 0) this.bloodDecals.splice(b, 1);
         }
 
-        // Screen shake decay
+        // Trauma decay. Slower than the old shake because the amplitude is
+        // squared below: it starts hard and tails off instead of stopping
+        // dead, which is the whole difference between a kick and a buzz.
         if (this.screenShake > 0) {
-          this.screenShake = Math.max(0, this.screenShake - dt * 6.5);
+          this.screenShake = Math.max(0, this.screenShake - dt * 2.6);
         }
 
         // CAMERA DEADZONE & DAMPING
@@ -4458,8 +4508,19 @@
       render(dt) {
         try {
           // Camera Screen Shake Translation
-          const shakeX = (this.screenShake > 0) ? (Math.random() - 0.5) * this.screenShake * 5.0 : 0;
-          const shakeY = (this.screenShake > 0) ? (Math.random() - 0.5) * this.screenShake * 5.0 : 0;
+          // Directional kick along the hit axis, amplitude squared so it
+          // falls off fast, plus a small perpendicular wobble so it does not
+          // read as a straight line. No randomness at all - this used to
+          // draw from Math.random every frame for a jitter nobody could see.
+          let shakeX = 0, shakeY = 0;
+          if (this.screenShake > 0) {
+            const amp = this.screenShake * this.screenShake * 9;
+            const a = this.shakeAngle || 0;
+            const wob = Math.sin(this.animTime * 52);
+            const side = Math.sin(this.animTime * 31) * 0.35;
+            shakeX = (Math.cos(a) * wob - Math.sin(a) * side) * amp;
+            shakeY = (Math.sin(a) * wob + Math.cos(a) * side) * amp;
+          }
           this.ctx.save();
           this.ctx.translate(shakeX, shakeY);
 

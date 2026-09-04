@@ -210,5 +210,62 @@ check('the simulation never reads the wall clock', () => {
 check('update never touches the render-owned pool', () =>
   assert(!/this\.fx/.test(UPDATE), 'update can see render decoration') || 'this.fx is invisible to the sim');
 
+// ── combat kinematics: force, not teleportation ────────────────────────
+check('knockback is an impulse that decays, not a teleport', () => {
+  const { game } = boot();
+  game.dungeon = { isWall: () => false };
+  const e = { x: 0, y: 0 };
+  game.knockback(e, 0, 35);
+  const first = e.x;
+  game.stepKnockback(e, 1 / 60);
+  assert(e.x > 0, 'the impulse moved nothing');
+  assert(e.x < 35, `one tick covered ${e.x.toFixed(1)}px - that is a teleport`);
+  let ticks = 0;
+  while ((e.kx || e.ky) && ticks < 600) { game.stepKnockback(e, 1 / 60); ticks++; }
+  assert(ticks > 5 && ticks < 120, `it took ${ticks} ticks to settle`);
+  assert(Math.abs(e.x - 35) < 12, `travelled ${e.x.toFixed(1)}px, meant to be about 35`);
+  return `${e.x.toFixed(1)}px over ${ticks} ticks (was ${first}px instantly)`;
+});
+
+check('knockback cannot push anything through a wall', () => {
+  const { game } = boot();
+  game.dungeon = { isWall: (x) => x > 20 };
+  const e = { x: 0, y: 0 };
+  game.knockback(e, 0, 200);
+  for (let i = 0; i < 200; i++) game.stepKnockback(e, 1 / 60);
+  assert(e.x <= 20, `ended up at x=${e.x.toFixed(1)}, inside the wall`);
+  return `stopped at ${e.x.toFixed(1)}`;
+});
+
+check('a stunned hostile still slides from the hit that stunned it', () => {
+  const UP = code(SRC.slice(SRC.indexOf('update(dt) {'), SRC.indexOf('render(dt) {')));
+  const step = UP.indexOf('this.stepKnockback(enemy, dt)');
+  const stun = UP.indexOf('Stunned: skips movement and attacks');
+  assert(step > 0 && stun > 0, 'one of the two moved');
+  assert(step < stun, 'the stun check runs first and swallows the knockback');
+  return 'impulse drains before the stun continue';
+});
+
+check('hit-stop freezes whole frames', () => {
+  const hits = SRC.match(/hitStopTimer = Math[.]max[(][^;]*[/] 60[)]/g) || [];
+  assert(hits.length === 3, `${hits.length} freeze sites, expected 3 and all in frames`);
+  assert(!/hitStopTimer = 0[.]0[0-9]+/.test(SRC), 'a freeze is still set in raw seconds');
+  assert(!/hitStopTimer = [(]?[a-zA-Z0-9 ?:]+[/] 60/.test(SRC),
+    'a freeze assigns instead of taking the longest one asked for this frame');
+  return `${hits.length} sites, all whole frames, all Math.max`;
+});
+
+check('trauma replaced the per-frame random jitter', () => {
+  assert(!/[(]Math[.]random[(][)] - 0[.]5[)] [*] this[.]screenShake/.test(SRC),
+    'the shake still draws a random number every frame');
+  assert(/addTrauma[(]/.test(RENDER) === false, 'render is adding trauma');
+  assert(/this[.]shakeAngle/.test(SRC), 'the shake has no direction');
+  // three run resets, the decay, and addTrauma's own accumulate
+  const bare = (SRC.match(/this[.]screenShake = /g) || []).length;
+  assert(bare === 5, `${bare} direct writes to screenShake, expected 5`);
+  assert(!/this[.]screenShake = 0[.][0-9]/.test(SRC), 'a hit still sets the shake directly');
+  return 'directional, decaying, deterministic';
+});
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

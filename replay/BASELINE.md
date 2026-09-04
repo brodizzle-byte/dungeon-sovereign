@@ -23,7 +23,17 @@ ticks instead of a handful of end-of-run totals — but their `status` and
 `score` come from the harness forcing an ending, so the comparison ignores
 those two fields and checks the hash instead.
 
-## v7 step 1 — current
+## v7 step 4 — current
+
+| seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
+|--------|-------|------|-------------------------------------------------|------|-----|------|----------|
+| 12345  | story | 6000 | tick cap, floor 3, 15 kills, 850 gold           | 6000 | 739 | 2118 | 60f7213c |
+| 777    | story | 6000 | FAILED floor 4, 17 kills, 900 gold, 4350 pts    | 3686 | 569 | 2680 | —        |
+| 424242 | story | 6000 | FAILED floor 6, 30 kills, 1225 gold, 6950 pts   | 5850 | 921 | 5023 | —        |
+| 12345  | arena | 9000 | FAILED floor 1, 3 kills, 75 gold, 600 pts       | 3863 | 475 | 1096 | —        |
+| 777    | arena | 9000 | FAILED floor 1, 6 kills, 150 gold, 1200 pts     | 6327 | 654 | 1272 | —        |
+
+## v7 steps 1-3
 
 | seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
 |--------|-------|------|-------------------------------------------------|------|-----|------|----------|
@@ -68,3 +78,10 @@ prove it.
 hash. That was the design goal, not a happy accident: projectile trails
 moved to a render-owned pool instead of into update() precisely so the
 seeded RNG stream would not start paying for sparkles.
+
+**Step 4 (combat kinematics)** moved everything, as a change to how fights
+resolve should. Enemies are shoved with force now instead of being teleported
+28-35px, so they spend a moment out of reach and then walk back in; hit-stop
+freezes whole frames at two moments instead of 25ms on a crit. The self-test
+bot has no opinion about feel, so what its numbers show is only that the
+fights are different - the runs are longer, and one seed now reaches floor 6.
