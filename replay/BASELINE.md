@@ -59,3 +59,7 @@ every scenario, and had to. The self-test bot picks the first skin in the
 list, which for the knight is Ironbark Vanguard: +15 HP and +2 DEF that had
 never once been applied. It now survives longer everywhere, which is why
 777/story stops dying on floor 4 and runs into the tick cap on floor 5.
+
+**Step 2 (the tile layer cached to an offscreen canvas)** reproduced step 1
+exactly, hash for hash. It is a render-only change and the state hashes
+prove it.

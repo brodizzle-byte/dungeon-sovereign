@@ -4454,30 +4454,14 @@
           this.ctx.fillStyle = this.dungeon ? this.dungeon.floorColor : '#040609';
           this.ctx.fillRect(0, 0, 480, 480);
 
-          const startTx = Math.max(0, Math.floor(this.cam.x / TILE_SIZE));
-          const endTx = Math.min(MAP_SIZE, Math.ceil((this.cam.x + 480) / TILE_SIZE));
-          const startTy = Math.max(0, Math.floor(this.cam.y / TILE_SIZE));
-          const endTy = Math.min(MAP_SIZE, Math.ceil((this.cam.y + 480) / TILE_SIZE));
-
-          for (let ty = startTy; ty < endTy; ty++) {
-            for (let tx = startTx; tx < endTx; tx++) {
-              const rx = tx * TILE_SIZE - this.cam.x;
-              const ry = ty * TILE_SIZE - this.cam.y;
-              const tile = this.dungeon.tiles[ty][tx];
-
-              if (tile === 1) {
-                this.ctx.fillStyle = this.dungeon.wallColor;
-                this.ctx.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
-                this.ctx.strokeStyle = '#1e293d';
-                this.ctx.strokeRect(rx, ry, TILE_SIZE, TILE_SIZE);
-              } else {
-                this.ctx.fillStyle = this.dungeon.floorColor;
-                this.ctx.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
-                this.ctx.fillStyle = '#141c2c';
-                this.ctx.fillRect(rx + 15, ry + 15, 2, 2);
-              }
-            }
-          }
+          // The map is the same every frame of a floor, so it is painted
+          // once into an offscreen canvas and blitted. That is ~900 canvas
+          // calls a frame replaced by one, and it is where the headroom for
+          // lighting and depth comes from. Built lazily HERE, in render:
+          // the server re-simulates without rendering and must never touch
+          // a canvas.
+          if (!this.dungeon.tileLayer) this.buildTileLayer(this.dungeon);
+          this.ctx.drawImage(this.dungeon.tileLayer, -this.cam.x, -this.cam.y);
 
           // Persistent Blood Decals on Floor
           for (let b = 0; b < this.bloodDecals.length; b++) {
@@ -4933,6 +4917,34 @@
             console.error('render() threw (' + this.renderErrors + '):', e);
           }
         }
+      }
+
+      // Paint a whole floor's tiles into one offscreen canvas. Same draw
+      // order as the per-frame loop it replaced, so the result is identical
+      // pixel for pixel - walls still stroke over their neighbours in
+      // row-major order.
+      buildTileLayer(dungeon) {
+        const c = document.createElement('canvas');
+        c.width = MAP_SIZE * TILE_SIZE;
+        c.height = MAP_SIZE * TILE_SIZE;
+        const g = c.getContext('2d');
+        for (let ty = 0; ty < MAP_SIZE; ty++) {
+          for (let tx = 0; tx < MAP_SIZE; tx++) {
+            const rx = tx * TILE_SIZE, ry = ty * TILE_SIZE;
+            if (dungeon.tiles[ty][tx] === 1) {
+              g.fillStyle = dungeon.wallColor;
+              g.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
+              g.strokeStyle = '#1e293d';
+              g.strokeRect(rx, ry, TILE_SIZE, TILE_SIZE);
+            } else {
+              g.fillStyle = dungeon.floorColor;
+              g.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
+              g.fillStyle = '#141c2c';
+              g.fillRect(rx + 15, ry + 15, 2, 2);
+            }
+          }
+        }
+        dungeon.tileLayer = c;
       }
 
       renderMinimapRadar() {
