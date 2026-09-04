@@ -173,6 +173,8 @@
           <div class="w-12 sm:w-16 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
             <div id="stam-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-full transition-all duration-100"></div>
           </div>
+          <!-- the attack chain: two dots then FINISHER, blank when it lapses -->
+          <span id="ui-combo" class="text-[10px] font-black tracking-widest text-cyan-300"></span>
         </div>
       </div>
 
@@ -2834,7 +2836,7 @@
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 15) {
-            this.addCombatLog('⚠️ Need 15 Stamina to attack!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 15;
@@ -3167,7 +3169,7 @@
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 30) {
-            this.addCombatLog('⚠️ Need 30 Stamina for heavy skill!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 30;
@@ -3232,7 +3234,7 @@
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 25) {
-            this.addCombatLog('⚠️ Need 25 Stamina to dodge roll!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 25;
@@ -3888,7 +3890,9 @@
         // meant the server's copy of the run never expired a single one.
         for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
           const ft = this.floatingTexts[i];
-          ft.y += ft.vy;
+          ft.x += (ft.vx || 0) * dt;
+          ft.y += ft.vy * dt;
+          ft.vy += 165 * dt;                 // gravity: up fast, back down slow
           ft.life -= dt;
           if (ft.life <= 0) this.floatingTexts.splice(i, 1);
         }
@@ -5106,6 +5110,10 @@
           for (let i = 0; i < this.floatingTexts.length; i++) {
             const ft = this.floatingTexts[i];
             this.ctx.save();
+            // Fade over the last third of its life, so numbers leave rather
+            // than blink out.
+            const fade = Math.min(1, (ft.life / (ft.maxLife || 0.85)) * 3);
+            this.ctx.globalAlpha = Math.max(0, fade);
             this.ctx.font = `bold ${ft.size}px JetBrains Mono`;
             this.ctx.fillStyle = ft.color;
             this.ctx.textAlign = 'center';
@@ -5205,7 +5213,18 @@
 
       spawnFloatingText(x, y, text, color, size = 14) {
         if (this.floatingTexts.length > 30) this.floatingTexts.shift();
-        this.floatingTexts.push({ x, y, vy: -0.8, text, color, size, life: 0.8 });
+        // Thrown, not slid. vy is per SECOND now: the old value moved a
+        // pixel per TICK, so the number drifted at whatever frame rate the
+        // phone happened to be running. The sideways spread is taken from
+        // how many numbers are already up rather than from a random draw -
+        // two hits on the same target should not stack into a blur, and a
+        // cosmetic has no business spending the run's seeded RNG.
+        this.floatingTexts.push({
+          x, y, text, color, size,
+          vx: ((this.floatingTexts.length % 5) - 2) * 13,
+          vy: -62,
+          life: 0.85, maxLife: 0.85,
+        });
       }
 
       saveRun(status = 'CLEARED') {
@@ -5327,8 +5346,31 @@
         this.setState(STATES.GAME_OVER);
       }
 
+      // The bar being empty is the message. This used to write a line into
+      // the combat log on every blocked press - several a second while
+      // someone held the attack button - which pushed everything the log
+      // exists for straight off the top of it.
+      flashStamina() {
+        const bar = document.getElementById('stam-bar');
+        if (!bar || this.stamFlashing) return;
+        this.stamFlashing = true;
+        bar.style.filter = 'brightness(2.6) saturate(2)';
+        setTimeout(() => {
+          bar.style.filter = '';
+          this.stamFlashing = false;
+        }, 110);
+      }
+
       updateHUD() {
         if (!this.player) return;
+        const chain = document.getElementById('ui-combo');
+        if (chain) {
+          const stage = this.player.comboStage | 0;
+          const live = this.player.comboTimer > 0;
+          chain.innerText = live ? (stage >= 2 ? 'FINISHER' : '\u25cf'.repeat(stage + 1)) : '';
+          chain.className = 'text-[10px] font-black tracking-widest ' +
+            (stage >= 2 ? 'text-amber-300' : 'text-cyan-300');
+        }
         const hpPct = Math.max(0, (this.player.hp / this.player.maxHp) * 100);
         document.getElementById('hp-bar').style.width = `${hpPct}%`;
         document.getElementById('ui-hp-text').innerText = `${Math.ceil(this.player.hp)}`;
