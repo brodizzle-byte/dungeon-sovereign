@@ -248,7 +248,7 @@ check('a stunned hostile still slides from the hit that stunned it', () => {
 
 check('hit-stop freezes whole frames', () => {
   const hits = SRC.match(/hitStopTimer = Math[.]max[(][^;]*[/] 60[)]/g) || [];
-  assert(hits.length === 3, `${hits.length} freeze sites, expected 3 and all in frames`);
+  assert(hits.length === 4, `${hits.length} freeze sites, expected 4 and all in frames`);
   assert(!/hitStopTimer = 0[.]0[0-9]+/.test(SRC), 'a freeze is still set in raw seconds');
   assert(!/hitStopTimer = [(]?[a-zA-Z0-9 ?:]+[/] 60/.test(SRC),
     'a freeze assigns instead of taking the longest one asked for this frame');
@@ -265,6 +265,94 @@ check('trauma replaced the per-frame random jitter', () => {
   assert(bare === 5, `${bare} direct writes to screenShake, expected 5`);
   assert(!/this[.]screenShake = 0[.][0-9]/.test(SRC), 'a hit still sets the shake directly');
   return 'directional, decaying, deterministic';
+});
+
+// ── the chain, and presses that used to be thrown away ─────────────────
+function armed(JB, game) {
+  const p = game.player;
+  p.stamina = p.maxStamina;
+  p.attackCd = 0;
+  game.playerAttack();
+  JB.tick(game);
+  return p;
+}
+
+check('three swings inside the window make a finisher, the fourth resets', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const seen = [];
+  for (let n = 0; n < 4; n++) {
+    const p = armed(JB, game);
+    seen.push(p.comboStage);
+    for (let i = 0; i < 3; i++) JB.tick(game);     // stay inside the window
+  }
+  assert(seen.join() === '0,1,2,0', `stages went ${seen.join()}, expected 0,1,2,0`);
+  return seen.join(' -> ');
+});
+
+check('letting the window lapse drops you back to a first hit', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  armed(JB, game);
+  for (let i = 0; i < 3; i++) JB.tick(game);
+  assert(armed(JB, game).comboStage === 1, 'the chain did not advance at all');
+  for (let i = 0; i < 40; i++) JB.tick(game);      // well past COMBO_WINDOW
+  assert(game.player.comboStage === 0, 'the window expired without resetting the stage');
+  assert(armed(JB, game).comboStage === 0, 'a lapsed chain carried on anyway');
+  return 'window closes, stage resets';
+});
+
+check('the finisher costs more recovery than a light hit', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const light = armed(JB, game).attackCd;
+  for (let i = 0; i < 3; i++) JB.tick(game);
+  armed(JB, game);
+  for (let i = 0; i < 3; i++) JB.tick(game);
+  const heavy = armed(JB, game).attackCd;
+  assert(game.player.comboStage === 2, 'that third swing was not the finisher');
+  assert(heavy > light, `finisher recovery ${heavy.toFixed(3)}s vs light ${light.toFixed(3)}s`);
+  return `${light.toFixed(3)}s light, ${heavy.toFixed(3)}s finisher`;
+});
+
+check('a press late in recovery is remembered, not eaten', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const p = game.player;
+  p.stamina = p.maxStamina;
+  p.attackCd = 0.1;                               // inside ATTACK_BUFFER
+  game.playerAttack();
+  JB.tick(game);
+  assert(p.attackBuffered === true, 'the press was dropped');
+  let fired = 0;
+  for (let i = 0; i < 20 && !fired; i++) {
+    JB.tick(game);
+    if (!p.attackBuffered && p.attackCd > 0.15) fired = i + 1;
+  }
+  assert(fired, 'the buffered press never fired');
+  return `fired ${fired} ticks later`;
+});
+
+check('a press early in recovery is still dropped', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const p = game.player;
+  p.stamina = p.maxStamina;
+  p.attackCd = 0.21;                              // outside ATTACK_BUFFER
+  game.playerAttack();
+  JB.tick(game);
+  assert(p.attackBuffered !== true, 'the whole recovery is buffering');
+  return 'only the tail of recovery buffers';
 });
 
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');

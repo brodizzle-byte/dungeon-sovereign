@@ -1448,6 +1448,12 @@
     // Low enough that a shove is over in about half a second and never
     // turns into skating.
     const KNOCK_DRAG = 0.0025;
+    // How long a swing stays "live" for the next one to chain off, and how
+    // much of the recovery will remember a press instead of eating it.
+    // The window has to outlast the recovery or the chain would be
+    // impossible to hit on purpose.
+    const COMBO_WINDOW = 0.4;
+    const ATTACK_BUFFER = 0.15;
     const MAP_SIZE = 32;
     const TILE_SIZE = 32;
     const WORLD_SIZE = MAP_SIZE * TILE_SIZE;
@@ -2467,6 +2473,9 @@
           attackCd: 0,
           attackPhase: 'idle',
           attackProgress: 0,
+          attackBuffered: false,
+          comboStage: 0,
+          comboTimer: 0,
           inventory: [
             { name: curWeapon.name, sprite: cls.sprite, type: 'weapon' },
             { name: 'Custom Sovereign Dye', sprite: cls.sprite, type: 'outfit' }
@@ -2802,7 +2811,15 @@
       }
 
       playerAttack() {
-        if (!this.player || this.player.hp <= 0 || this.player.attackCd > 0) return;
+        if (!this.player || this.player.hp <= 0) return;
+        if (this.player.attackCd > 0) {
+          // Remember the press instead of dropping it. Only near the end of
+          // recovery: buffering the whole window would let someone mash one
+          // button and get a swing queued forever.
+          if (this.player.attackCd <= ATTACK_BUFFER) this.player.attackBuffered = true;
+          return;
+        }
+        this.player.attackBuffered = false;
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 15) {
@@ -2813,8 +2830,18 @@
           this.player.staminaRegenDelay = 0.45;
         }
 
+        // Light, light, HEAVY. Stage only advances while the previous swing
+        // is still live; let it lapse and the next hit is a first hit again.
+        this.player.comboStage = (this.player.comboTimer > 0 && this.player.comboStage < 2)
+          ? this.player.comboStage + 1 : 0;
+        this.player.comboTimer = COMBO_WINDOW;
+        const isFinisher = (this.player.comboStage === 2);
+
         const wpn = this.player.weaponData || {};
         let cdBase = (this.player.auraState === 'SWEET_SPOT' || this.player.auraState === 'DIABETIC_RAGE') ? 0.17 : 0.22;
+        // The finisher costs time. Without that it is a free damage bonus
+        // for holding the button down rather than something you commit to.
+        if (isFinisher) cdBase *= 1.55;
 
         // Weapon Trait: Flurry / Rapid Crit (Base attack cooldown cut to 0.12s)
         const isFlurry = (wpn.type === 'daggers' || wpn.traitId === 'swift_flurry' || wpn.traitId === 'predator_stalk');
@@ -2842,6 +2869,12 @@
         }
 
         let dmgMultiplier = (this.player.auraState === 'DIABETIC_RAGE') ? 2.5 : 1.0;
+        if (isFinisher) {
+          dmgMultiplier *= 1.6;
+          this.hitStopTimer = Math.max(this.hitStopTimer, 6 / 60);
+          this.addTrauma(0.55, angle);
+          this.spawnFloatingText(this.player.x, this.player.y - 18, 'FINISHER', '#fbbf24', 13);
+        }
 
         // Weapon Trait: Wide Cleave (Hitbox arc expands to 1.65 rad)
         let wpnArc = wpn.arc || Math.PI * 0.65;
@@ -2850,6 +2883,9 @@
         if (isWideCleave) {
           wpnArc = 1.65;
         }
+        // The third swing opens up: it is the one that is supposed to catch
+        // the second enemy standing beside the one you were aiming at.
+        if (isFinisher) wpnArc = Math.min(2.2, wpnArc * 1.35);
 
         // Weapon Trait: Long Reach (Swing reach extends from 50px to 85px with narrower 0.6 rad cone)
         const isLongReach = (wpn.type === 'polearm' || wpn.traitId === 'extended_pierce' || wpn.traitId === 'lunge_thrust');
@@ -3522,6 +3558,19 @@
         }
 
         // Attack Phase & Cooldown
+        // The chain window, and the press we promised to remember. Calling
+        // playerAttack() from inside update() is safe and identical on both
+        // sides: the wrapper routes a call made during a tick straight to
+        // the real one instead of queueing it for the next tick.
+        if (this.player.comboTimer > 0) {
+          this.player.comboTimer -= dt;
+          if (this.player.comboTimer <= 0) this.player.comboStage = 0;
+        }
+        if (this.player.attackCd <= 0 && this.player.attackBuffered) {
+          this.player.attackBuffered = false;
+          this.playerAttack();
+        }
+
         if (this.player.attackCd > 0) {
           this.player.attackCd -= dt;
           this.player.attackProgress = 1 - (this.player.attackCd / 0.22);

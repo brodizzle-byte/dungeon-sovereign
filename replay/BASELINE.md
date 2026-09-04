@@ -23,7 +23,17 @@ ticks instead of a handful of end-of-run totals — but their `status` and
 `score` come from the harness forcing an ending, so the comparison ignores
 those two fields and checks the hash instead.
 
-## v7 step 4 — current
+## v7 step 5 — current
+
+| seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
+|--------|-------|------|-------------------------------------------------|------|-----|------|----------|
+| 12345  | story | 6000 | FAILED floor 4, 24 kills, 1075 gold, 5750 pts   | 4630 | 693 | 3820 | —        |
+| 777    | story | 6000 | FAILED floor 4, 26 kills, 1125 gold, 6150 pts   | 4645 | 699 | 4468 | —        |
+| 424242 | story | 6000 | FAILED floor 4, 22 kills, 1025 gold, 5350 pts   | 4551 | 599 | 3930 | —        |
+| 12345  | arena | 9000 | FAILED floor 1, 6 kills, 150 gold, 1200 pts     | 3715 | 456 | 1168 | —        |
+| 777    | arena | 9000 | tick cap, floor 1, 5 kills, 125 gold            | 9000 | 324 | 1138 | 3df98044 |
+
+## v7 step 4
 
 | seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
 |--------|-------|------|-------------------------------------------------|------|-----|------|----------|
@@ -85,3 +95,9 @@ resolve should. Enemies are shoved with force now instead of being teleported
 freezes whole frames at two moments instead of 25ms on a crit. The self-test
 bot has no opinion about feel, so what its numbers show is only that the
 fights are different - the runs are longer, and one seed now reaches floor 6.
+
+**Step 5 (the chain and the input buffer)** moved them again. The self-test
+bot swings on a fixed cadence rather than reacting, so it lands the finisher
+by accident rather than on purpose - which is the honest limit of what these
+numbers can tell you about feel. They tell you the fights changed. Whether
+the chain is satisfying is a question for a person with a phone.
