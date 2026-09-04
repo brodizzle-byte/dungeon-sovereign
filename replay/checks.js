@@ -181,5 +181,34 @@ for (const dead of ['player.cooldown', 'player.invuln', 'player.stagger',
   check(`${dead} stays gone`, () => assert(!SRC.includes(dead), 'it is referenced again') || '');
 }
 
+// ── update() owns the simulation, render() only draws it ───────────────
+/* Comments talk ABOUT the rules, so a check that reads them would fail on
+ * the sentence explaining why it passes. Drop whole-line comments first. */
+const code = t => t.split('\n').filter(l => !l.trim().startsWith('//')).join('\n');
+const RENDER = code(SRC.slice(SRC.indexOf('render(dt) {'), SRC.indexOf('buildTileLayer(dungeon) {')));
+const UPDATE = code(SRC.slice(SRC.indexOf('update(dt) {'), SRC.indexOf('render(dt) {')));
+
+check('render does not push into the simulation particle pool', () => {
+  assert(!/this\.particles\.push/.test(RENDER), 'render still writes to this.particles');
+  assert(!/this\.particles\.shift/.test(RENDER), 'render still prunes this.particles');
+  assert(/this\.fx\.push/.test(RENDER), 'the render-owned pool is not being used');
+  return 'trails live in this.fx';
+});
+
+check('render does not expire floating text', () => {
+  assert(!/this\.floatingTexts\.splice/.test(RENDER), 'render still removes floating text');
+  assert(/this\.floatingTexts\.splice/.test(UPDATE), 'nothing expires floating text any more');
+  return 'update owns the clock';
+});
+
+check('the simulation never reads the wall clock', () => {
+  assert(!/performance\.now\(\)/.test(RENDER), 'render still reads performance.now()');
+  assert(!/performance\.now\(\)/.test(UPDATE), 'update reads performance.now()');
+  return 'animTime only';
+});
+
+check('update never touches the render-owned pool', () =>
+  assert(!/this\.fx/.test(UPDATE), 'update can see render decoration') || 'this.fx is invisible to the sim');
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

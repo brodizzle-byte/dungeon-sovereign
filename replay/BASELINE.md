@@ -63,3 +63,8 @@ never once been applied. It now survives longer everywhere, which is why
 **Step 2 (the tile layer cached to an offscreen canvas)** reproduced step 1
 exactly, hash for hash. It is a render-only change and the state hashes
 prove it.
+
+**Step 3 (the update/render split)** reproduced step 2 exactly, hash for
+hash. That was the design goal, not a happy accident: projectile trails
+moved to a render-owned pool instead of into update() precisely so the
+seeded RNG stream would not start paying for sparkles.
