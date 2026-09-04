@@ -1,4 +1,26 @@
 <!DOCTYPE html>
+<!--
+  Dungeon Sovereign — Degen Edition
+  ---------------------------------
+  Originally written by a JuiceBox member as a single self-contained file.
+  From v7.0 this copy is maintained by JuiceBox and handed back finished:
+  the engine STAYS one standalone game.html with no dependency on anything
+  in this folder, so it can always be lifted out and run on its own.
+
+  The pristine v6.5 the author delivered is the `main` branch of this
+  folder's git repo -- `git show main:game.html` for a byte-exact copy,
+  `git diff main..HEAD -- game.html` for everything we changed.
+
+  JuiceBox's own layer (bridge.js, controls.js, index.php, api.php,
+  replay/) lives OUTSIDE this file and patches it by name at runtime. Two
+  rules that layer imposes, and they are not negotiable:
+    * update() owns simulation state; render() is read-only. The server
+      re-simulates every run WITHOUT rendering, so anything in render()
+      that changes state diverges the replay and the run pays nothing.
+    * No wall-clock time in the simulation. Use this.animTime, which
+      advances by exactly one fixed tick. performance.now() is fine for
+      render-only interpolation and nowhere else.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -5037,7 +5059,7 @@
         document.getElementById('go-stat-overdoses').innerText = this.runStats.sugarOverdoses;
         document.getElementById('go-stat-mitigated').innerText = `${this.runStats.damageMitigated} DMG`;
         document.getElementById('go-stat-cause').innerText = 'Victorious Sovereign';
-        document.getElementById('go-stat-score').innerText = score;
+        document.getElementById('go-stat-score').innerText = this.runStats.score;
         this.setState(STATES.GAME_OVER);
       }
 
@@ -5068,7 +5090,7 @@
         document.getElementById('go-stat-overdoses').innerText = this.runStats.sugarOverdoses;
         document.getElementById('go-stat-mitigated').innerText = `${this.runStats.damageMitigated} DMG`;
         document.getElementById('go-stat-cause').innerText = this.runStats.causeOfDeath;
-        document.getElementById('go-stat-score').innerText = score;
+        document.getElementById('go-stat-score').innerText = this.runStats.score;
         this.setState(STATES.GAME_OVER);
       }
 

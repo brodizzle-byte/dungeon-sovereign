@@ -36,9 +36,6 @@ function main() {
 
   const here = __dirname;
   let html = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
-  // the same serve-time patch index.php applies (victory screen bug)
-  html = html.replace("document.getElementById('go-stat-score').innerText = score;\n        this.setState(STATES.GAME_OVER);",
-                      "document.getElementById('go-stat-score').innerText = this.runStats.score;\n        this.setState(STATES.GAME_OVER);");
   html = html.split('Math.random(').join('JB.rng(');   // same rewrite index.php serves
   const scripts = [];
   const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
