@@ -23,7 +23,17 @@ ticks instead of a handful of end-of-run totals — but their `status` and
 `score` come from the harness forcing an ending, so the comparison ignores
 those two fields and checks the hash instead.
 
-## v7 step 5 — current
+## v7 step 6 — current
+
+| seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
+|--------|-------|------|-------------------------------------------------|------|-----|------|----------|
+| 12345  | story | 6000 | FAILED floor 4, 26 kills, 1125 gold, 6150 pts   | 4338 | 638 | 3443 | —        |
+| 777    | story | 6000 | tick cap, floor 6, 32 kills, 1275 gold          | 6000 | 850 | 4712 | 47cdf6ea |
+| 424242 | story | 6000 | FAILED floor 4, 20 kills, 975 gold, 4950 pts    | 3170 | 449 | 2246 | —        |
+| 12345  | arena | 9000 | FAILED floor 1, 6 kills, 150 gold, 1200 pts     | 3715 | 456 | 1168 | —        |
+| 777    | arena | 9000 | tick cap, floor 1, 5 kills, 125 gold            | 9000 | 324 | 1138 | 3df98044 |
+
+## v7 step 5
 
 | seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
 |--------|-------|------|-------------------------------------------------|------|-----|------|----------|
@@ -101,3 +111,17 @@ bot swings on a fixed cadence rather than reacting, so it lands the finisher
 by accident rather than on purpose - which is the honest limit of what these
 numbers can tell you about feel. They tell you the fights changed. Whether
 the chain is satisfying is a question for a person with a phone.
+
+**Step 6 (enemies attack instead of leaking damage)** is the change with
+the most balance risk in the whole overhaul, and the table cannot settle it.
+Contact damage was 3.5x a full hit per second of standing still; a landed
+swing is now worth about half a second of that, on a cycle of roughly a
+second, and it can be walked out of, dodged, or cancelled with a stun. On
+paper that is a large nerf to every hostile in the game, and the self-test
+bot - which never dodges and never retreats - now survives to floor 6 on a
+seed that used to stop it on 4.
+
+Three numbers decide whether that is right, all together at the top of the
+file: ENEMY_HIT_SCALE (2.0), ENEMY_SWING_CD (0.5) and ENEMY_WINDUP (0.34).
+They are deliberately in one place because this wants a person playing it,
+not a bot averaging it.

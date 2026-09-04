@@ -248,7 +248,7 @@ check('a stunned hostile still slides from the hit that stunned it', () => {
 
 check('hit-stop freezes whole frames', () => {
   const hits = SRC.match(/hitStopTimer = Math[.]max[(][^;]*[/] 60[)]/g) || [];
-  assert(hits.length === 4, `${hits.length} freeze sites, expected 4 and all in frames`);
+  assert(hits.length === 5, `${hits.length} freeze sites, expected 5 and all in frames`);
   assert(!/hitStopTimer = 0[.]0[0-9]+/.test(SRC), 'a freeze is still set in raw seconds');
   assert(!/hitStopTimer = [(]?[a-zA-Z0-9 ?:]+[/] 60/.test(SRC),
     'a freeze assigns instead of taking the longest one asked for this frame');
@@ -353,6 +353,90 @@ check('a press early in recovery is still dropped', () => {
   JB.tick(game);
   assert(p.attackBuffered !== true, 'the whole recovery is buffering');
   return 'only the tail of recovery buffers';
+});
+
+// ── enemies attack; they do not leak damage into you ───────────────────
+function inRangeOf(game) {
+  // Floor 1 mixes melee skulkers with ranged cultists, and a caster will
+  // never wind up a melee swing however long you stand on it.
+  const e = game.enemies.find(x => !x.dead && x.archetype === 'abyssal_skulker')
+         || game.enemies.find(x => !x.dead);
+  if (!e) throw new Error('the floor spawned no hostiles to test with');
+  e.archetype = 'abyssal_skulker';
+  e.skulkerState = 'advance';
+  e.x = game.player.x + 12;
+  e.y = game.player.y;
+  e.stunTimer = 0;
+  e.atkState = null;
+  e.swingCd = 0;
+  return e;
+}
+
+check('standing inside a hostile does not drain health', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  game.spawnGraceTimer = 0;
+  const p = game.player;
+  const e = inRangeOf(game);
+  const drops = [];
+  let last = p.hp;
+  for (let i = 0; i < 90; i++) {
+    e.x = p.x + 12; e.y = p.y;                    // pinned in contact
+    JB.tick(game);
+    if (p.hp < last) { drops.push(+(last - p.hp).toFixed(2)); last = p.hp; }
+    if (p.hp <= 0) break;
+  }
+  assert(drops.length, 'a hostile in contact for a second and a half did nothing at all');
+  assert(drops.length <= 3, `${drops.length} separate damage events in 90 ticks - that is a drain`);
+  assert(drops.every(d => d >= 1 && Number.isInteger(d)),
+    `damage arrived in fractions: ${drops.join(', ')}`);
+  return `${drops.length} discrete hit(s): ${drops.join(', ')}`;
+});
+
+check('walking out of a windup means the swing misses', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  game.spawnGraceTimer = 0;
+  const p = game.player;
+  const e = inRangeOf(game);
+  for (let i = 0; i < 40 && !e.atkState; i++) { e.x = p.x + 12; e.y = p.y; JB.tick(game); }
+  assert(e.atkState === 'windup', 'the hostile never wound up');
+  const hp = p.hp;
+  e.x = p.x + 400;                                 // step out of the swing
+  for (let i = 0; i < 40; i++) { e.x = p.x + 400; JB.tick(game); }
+  assert(p.hp === hp, `took ${(hp - p.hp).toFixed(2)} damage from a swing it walked out of`);
+  return 'no damage from a swing you left';
+});
+
+check('stunning a hostile mid-windup cancels the swing', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  game.spawnGraceTimer = 0;
+  const p = game.player;
+  const e = inRangeOf(game);
+  for (let i = 0; i < 40 && !e.atkState; i++) { e.x = p.x + 12; e.y = p.y; JB.tick(game); }
+  assert(e.atkState === 'windup', 'the hostile never wound up');
+  const hp = p.hp;
+  e.stunTimer = 0.5;
+  for (let i = 0; i < 20; i++) { e.x = p.x + 12; e.y = p.y; JB.tick(game); }
+  assert(e.atkState === null, 'the stun did not cancel the swing');
+  assert(p.hp === hp, `the cancelled swing still did ${(hp - p.hp).toFixed(2)} damage`);
+  return 'swing cancelled, no damage';
+});
+
+check('no contact damage formula survives anywhere', () =>
+  assert(!/hp -= [a-zA-Z.]+ [*] dt [*] 3[.]5/.test(SRC),
+    'the per-tick contact drain is still in the file') || 'gone');
+
+check('the windup is drawn', () => {
+  assert(/atkState === 'windup'/.test(RENDER), 'nothing draws the telegraph');
+  return 'a closing ring, red until it lands';
 });
 
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');

@@ -1452,6 +1452,17 @@
     // much of the recovery will remember a press instead of eating it.
     // The window has to outlast the recovery or the chain would be
     // impossible to hit on purpose.
+    // A hostile's swing: telegraph, land, recover, wait. Long enough to
+    // see coming and to walk out of, short enough that a room full of them
+    // is still frightening.
+    const ENEMY_WINDUP = 0.34;
+    const ENEMY_RECOVER = 0.26;
+    const ENEMY_SWING_CD = 0.5;
+    // One landed hit is worth about half a second of the contact damage it
+    // replaces. It has to be worth something - a hit you can avoid entirely
+    // should hurt when it lands - but the old drain was 3.5x a full hit per
+    // second of standing still, and nothing survives that being discrete.
+    const ENEMY_HIT_SCALE = 2.0;
     const COMBO_WINDOW = 0.4;
     const ATTACK_BUFFER = 0.15;
     const MAP_SIZE = 32;
@@ -3385,24 +3396,74 @@
         return (e.slowTimer > 0) ? spd * (e.slowMul || 0.75) : spd;
       }
 
-      applyEnemyMeleeHit(enemy, dt, multiplier = 1.0) {
+      // A hostile ASKS to attack; it does not deal damage by touching you.
+      // `instant` is for the archetypes that ran their own telegraph
+      // already - the brute's bash, the golem's charge, the burrower
+      // surfacing - which would otherwise wind up twice.
+      applyEnemyMeleeHit(enemy, dt, multiplier = 1.0, instant = false) {
+        if (instant) { this.resolveEnemyStrike(enemy, multiplier); return; }
+        if (enemy.atkState || (enemy.swingCd || 0) > 0 || enemy.stunTimer > 0) return;
+        enemy.atkState = 'windup';
+        enemy.atkTimer = ENEMY_WINDUP;
+        enemy.atkMul = multiplier;
+        enemy.atkRange = 0;   // filled in when the swing lands
+      }
+
+      // Drive one hostile's swing. Called every tick, before the stun check,
+      // so that stunning something mid-windup actually cancels the swing -
+      // which is the entire point of stunning it.
+      stepEnemyAttack(enemy, dt) {
+        if (enemy.swingCd > 0) enemy.swingCd -= dt;
+        if (!enemy.atkState) return;
+        if (enemy.stunTimer > 0 || enemy.dead) {
+          enemy.atkState = null;
+          enemy.swingCd = ENEMY_SWING_CD;
+          return;
+        }
+        enemy.atkTimer -= dt;
+        if (enemy.atkTimer > 0) return;
+        if (enemy.atkState === 'windup') {
+          // The swing only connects if you are still standing in it.
+          const reach = enemy.radius + this.player.radius + 20;
+          if (Math.hypot(this.player.x - enemy.x, this.player.y - enemy.y) <= reach) {
+            this.resolveEnemyStrike(enemy, enemy.atkMul || 1);
+          } else {
+            this.spawnFloatingText(enemy.x, enemy.y - 14, 'MISS', '#94a3b8', 11);
+          }
+          enemy.atkState = 'recover';
+          enemy.atkTimer = ENEMY_RECOVER;
+        } else {
+          enemy.atkState = null;
+          enemy.swingCd = ENEMY_SWING_CD;
+        }
+      }
+
+      // One landed blow. Everything that used to happen a sliver at a time,
+      // happening once.
+      resolveEnemyStrike(enemy, multiplier = 1.0) {
+        const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
         if (this.spawnGraceTimer > 0) {
           this.spawnFloatingText(this.player.x, this.player.y, 'IMMUNE', '#38bdf8', 12);
-        } else if (this.player.isDodging) {
-          this.runStats.damageMitigated += Math.round(enemy.atk * dt * 3.5 * multiplier);
-        } else {
-          const dmg = Math.max(1, Math.round((enemy.atk * multiplier) * 0.75 - this.player.def * 0.35));
-          this.player.hp -= dmg * dt * 3.5;
-          if (Math.random() < 0.08) {
-            SFX.hit();
-            triggerHaptic('heavy');
-            this.addTrauma(0.35, Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x));
-          }
-          this.updateHUD();
-          if (this.player.hp <= 0) {
-            this.runStats.causeOfDeath = `${enemy.name} Strike`;
-            this.triggerGameOver();
-          }
+          return;
+        }
+        const raw = Math.max(1, Math.round((enemy.atk * multiplier) * 0.75 - this.player.def * 0.35));
+        const dmg = Math.max(1, Math.round(raw * ENEMY_HIT_SCALE));
+        if (this.player.isDodging) {
+          this.runStats.damageMitigated += dmg;
+          this.spawnFloatingText(this.player.x, this.player.y, 'DODGED!', '#38bdf8', 13);
+          return;
+        }
+        this.player.hp -= dmg;
+        SFX.hit();
+        triggerHaptic('heavy');
+        this.addTrauma(0.45, angle);
+        this.hitStopTimer = Math.max(this.hitStopTimer, 2 / 60);
+        this.knockback(this.player, angle, 14);
+        this.spawnFloatingText(this.player.x, this.player.y, `-${dmg}`, '#ef4444', 15);
+        this.updateHUD();
+        if (this.player.hp <= 0) {
+          this.runStats.causeOfDeath = `${enemy.name} Strike`;
+          this.triggerGameOver();
         }
       }
 
@@ -3927,8 +3988,10 @@
           if (enemy.strafeTimer > 0) enemy.strafeTimer = Math.max(0, enemy.strafeTimer - dt);
 
           // Before the stun check on purpose: being stunned is exactly when
-          // a hostile should still be sliding from the hit that stunned it.
+          // a hostile should still be sliding from the hit that stunned it,
+          // and exactly when its half-finished swing should be cancelled.
           this.stepKnockback(enemy, dt);
+          this.stepEnemyAttack(enemy, dt);
 
           // Status Effect Ticks
           if (enemy.stunTimer > 0) {
@@ -4204,7 +4267,7 @@
                   SFX.hit();
                   // Forward knockback bash across gap
                   if (distToTarget <= 52) {
-                    this.applyEnemyMeleeHit(enemy, dt, 1.4);
+                    this.applyEnemyMeleeHit(enemy, dt, 1.4, true);
                     this.knockback(this.player, angleToTarget, 50);
                     this.hitStopTimer = Math.max(this.hitStopTimer, 3 / 60);
                     this.addTrauma(0.7, angleToTarget);
@@ -4320,7 +4383,7 @@
                   enemy.y = chy;
                 }
                 if (target === this.player && distToTarget <= atkRange + 8) {
-                  this.applyEnemyMeleeHit(enemy, dt, 2.2);
+                  this.applyEnemyMeleeHit(enemy, dt, 2.2, true);
                   this.player.x += Math.cos(enemy.chargeAngle) * 35;
                   this.player.y += Math.sin(enemy.chargeAngle) * 35;
                 }
@@ -4359,7 +4422,7 @@
                 enemy.isBurrowed = !enemy.isBurrowed;
                 enemy.burrowTimer = enemy.isBurrowed ? 1.4 : 2.2;
                 if (!enemy.isBurrowed && distToTarget <= 45) {
-                  this.applyEnemyMeleeHit(enemy, dt, 1.5);
+                  this.applyEnemyMeleeHit(enemy, dt, 1.5, true);
                   SFX.hit();
                 }
               }
@@ -4758,6 +4821,22 @@
             const ex = enemy.x - this.cam.x;
             const ey = enemy.y - this.cam.y;
             const bobY = Math.sin(this.animTime * 8 + enemy.x) * 2;
+
+            // Windup telegraph: a ring that closes onto the hostile as the
+            // swing arrives, red while it is coming, white on the frame it
+            // lands. Without this the discrete attack is just contact
+            // damage with extra steps and worse feedback.
+            if (enemy.atkState === 'windup') {
+              const t = 1 - Math.max(0, enemy.atkTimer / ENEMY_WINDUP);
+              this.ctx.save();
+              this.ctx.globalAlpha = 0.35 + t * 0.5;
+              this.ctx.strokeStyle = t > 0.9 ? '#ffffff' : '#ef4444';
+              this.ctx.lineWidth = 2 + t * 2;
+              this.ctx.beginPath();
+              this.ctx.arc(ex, ey, enemy.radius + 26 - t * 22, 0, Math.PI * 2);
+              this.ctx.stroke();
+              this.ctx.restore();
+            }
 
             if (enemy.boss && enemy.phase === 2) {
               this.ctx.save();
