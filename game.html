@@ -7,9 +7,10 @@
   the engine STAYS one standalone game.html with no dependency on anything
   in this folder, so it can always be lifted out and run on its own.
 
-  The pristine v6.5 the author delivered is the `main` branch of this
-  folder's git repo -- `git show main:game.html` for a byte-exact copy,
-  `git diff main..HEAD -- game.html` for everything we changed.
+  The pristine v6.5 the author delivered is tagged in this folder's git
+  repo -- `git show v6.5-original:game.html` for a byte-exact copy (md5
+  3b75ab4a29cc2e2f2b4f70d464e0a04f), `git diff v6.5-original..HEAD --
+  game.html` for everything we changed since.
 
   JuiceBox's own layer (bridge.js, controls.js, index.php, api.php,
   replay/) lives OUTSIDE this file and patches it by name at runtime. Two
