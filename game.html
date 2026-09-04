@@ -1455,7 +1455,6 @@
         this.tiles = [];
         this.explored = [];
         this.rooms = [];
-        this.hazardPuddles = [];
         this.sconces = [];
         this.exitPos = { x: 900, y: 900 };
 
@@ -1675,11 +1674,9 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
         this.bloodDecals = [];
         this.screenShake = 0;
-        this.hitStopTimer = 0;
         this.floatingTexts = [];
         this.weaponSwings = [];
         this.spawnBeacons = [];
@@ -2343,7 +2340,6 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
         this.bloodDecals = [];
         this.screenShake = 0;
@@ -2406,11 +2402,13 @@
       initPlayer() {
         const cls = HERO_CLASSES[this.selectedClassId];
         const weapons = CLASS_WEAPONS[this.selectedClassId] || [];
+        const skins = CLASS_SKINS[this.selectedClassId] || [];
         const curWeapon = weapons.find(w => w.id === this.selectedWeaponId) || weapons[0];
+        const curSkin = skins.find(sk => sk.id === this.selectedSkinId) || skins[0] || {};
 
-        let baseHp = cls.hp;
+        let baseHp = cls.hp + (curSkin.hpMod || 0);
         let baseAtk = cls.atk + (curWeapon.atkMod || 0);
-        let baseDef = cls.def;
+        let baseDef = cls.def + (curSkin.defMod || 0);
         let baseCrit = cls.crit;
         let baseSips = 3;
 
@@ -2485,7 +2483,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Abyssal Skulker',
             sprite: 'enemy_abyssal_skulker',
-            aiType: 'hunter',
             x, y, radius: 12,
             hp: Math.round(26 + floor * 3.5),
             maxHp: Math.round(26 + floor * 3.5),
@@ -2503,7 +2500,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Void Cultist',
             sprite: 'enemy_void_cultist',
-            aiType: 'kiter',
             x, y, radius: 13,
             hp: Math.round(32 + floor * 3.5),
             maxHp: Math.round(32 + floor * 3.5),
@@ -2522,7 +2518,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Shield Brute (Backstab Required)',
             sprite: 'enemy_shield_brute',
-            aiType: 'tank',
             x, y, radius: 16,
             hp: Math.round(52 + floor * 5.0),
             maxHp: Math.round(52 + floor * 5.0),
@@ -2541,7 +2536,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Toxic Void Spitter',
             sprite: 'enemy_void_spitter',
-            aiType: 'spitter',
             x, y, radius: 14,
             hp: Math.round(42 + floor * 4.5),
             maxHp: Math.round(42 + floor * 4.5),
@@ -2560,7 +2554,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Charging Chad Golem',
             sprite: 'enemy_chad_golem',
-            aiType: 'charger',
             x, y, radius: 17,
             hp: Math.round(60 + floor * 6.0),
             maxHp: Math.round(60 + floor * 6.0),
@@ -2580,7 +2573,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Volatile Burrowing Wyrm',
             sprite: 'enemy_liquidator_wyrm',
-            aiType: 'burrower',
             x, y, radius: 15,
             hp: Math.round(48 + floor * 5.0),
             maxHp: Math.round(48 + floor * 5.0),
@@ -2599,7 +2591,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Elite Archon (Volley Caster)',
             sprite: 'enemy_elite_archon',
-            aiType: 'archon',
             x, y, radius: 15,
             hp: Math.round(54 + floor * 5.5),
             maxHp: Math.round(54 + floor * 5.5),
@@ -2618,7 +2609,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Cloning FUD Phantom',
             sprite: 'enemy_fud_phantom',
-            aiType: 'phantom_cloner',
             x, y, radius: 13,
             hp: Math.round(36 + floor * 4.0),
             maxHp: Math.round(36 + floor * 4.0),
@@ -2648,7 +2638,6 @@
             sprite: cls.sprite,
             weaponData: randWeapon,
             skinData: randSkin,
-            aiType: 'gladiator',
             x, y, radius: 14,
             hp: Math.round(cls.hp * 0.72),
             maxHp: Math.round(cls.hp * 0.72),
@@ -2674,7 +2663,6 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
         this.bloodDecals = [];
         this.screenShake = 0;
@@ -2828,7 +2816,6 @@
         }
 
         this.player.attackCd = cdBase;
-        this.player.cooldown = cdBase;
         this.player.attackPhase = 'windup';
         this.player.attackProgress = 0;
 
@@ -2905,9 +2892,9 @@
               isHoming: (wpn.traitId === 'arcane_homing'),
               isExplosiveAOE: (wpn.traitId === 'ignition_blast' || isFire),
               pierceCount: (wpn.traitId === 'piercing_beam') ? 3 : 0,
-              isChainLightning: (wpn.traitId === 'storm_wand'),
-              isSingularity: (wpn.traitId === 'pocket_singularity'),
-              isMidasCurse: (wpn.traitId === 'debt_codex')
+              isChainLightning: (wpn.traitId === 'chain_lightning'),
+              isSingularity: (wpn.traitId === 'singularity_collapse'),
+              isMidasCurse: (wpn.traitId === 'midas_curse')
             });
           }
           this.screenShake = 0.2;
@@ -2998,7 +2985,6 @@
               const isStaggerWeapon = (wpn.type === 'warhammer' || wpn.traitId === 'stun_impact' || wpn.traitId === 'armor_sunder');
               if (isStaggerWeapon) {
                 enemy.stunTimer = 0.5;
-                enemy.attackCooldown = Math.max(enemy.attackCooldown || 0, 0.5);
                 enemy.attackCd = Math.max(enemy.attackCd || 0, 0.5);
                 enemy.x += Math.cos(centerAngle) * 35;
                 enemy.y += Math.sin(centerAngle) * 35;
@@ -3030,6 +3016,8 @@
                 enemy.poisonTicks = 4;
                 enemy.poisonDmg = Math.max(2, Math.round(dmg * 0.2));
                 enemy.slowTimer = 2.0;
+                enemy.slowMul = 0.75;    // "slowing by 25%"
+
                 this.spawnFloatingText(enemy.x, enemy.y, 'POISONED', '#22c55e', 12);
               }
 
@@ -3061,6 +3049,7 @@
               // Trait: Extended Snare (Slow enemy by 40%)
               if (wpn.traitId === 'extended_snare') {
                 enemy.slowTimer = 2.0;
+                enemy.slowMul = 0.60;    // "slows enemy movement by 40%"
               }
 
               // Trait: Vortex Pull (Pull enemy 25px toward player)
@@ -3306,6 +3295,16 @@
         }
       }
 
+      // How fast this hostile actually moves right now. Pass `base` when
+      // the caller has its own speed (a lunge, a boss charge) so the slow
+      // applies to that too. Keep every movement read going through here:
+      // enemy.speed is the BASE, and writing an effect straight onto it
+      // fights with the archetypes that reassign speed each frame.
+      moveSpeed(e, base) {
+        const spd = (base == null) ? e.speed : base;
+        return (e.slowTimer > 0) ? spd * (e.slowMul || 0.75) : spd;
+      }
+
       applyEnemyMeleeHit(enemy, dt, multiplier = 1.0) {
         if (this.spawnGraceTimer > 0) {
           this.spawnFloatingText(this.player.x, this.player.y, 'IMMUNE', '#38bdf8', 12);
@@ -3413,9 +3412,6 @@
         }
 
         // Time-scaled player timers & cooldowns
-        if (this.player.cooldown > 0) this.player.cooldown = Math.max(0, this.player.cooldown - dt);
-        if (this.player.invuln > 0) this.player.invuln = Math.max(0, this.player.invuln - dt);
-        if (this.player.stagger > 0) this.player.stagger = Math.max(0, this.player.stagger - dt);
 
         // SUGAR & AURA STATE MACHINE
         if (this.player.crashTimer > 0) {
@@ -3822,7 +3818,6 @@
 
           if (enemy.hpFadeTimer > 0) enemy.hpFadeTimer -= dt;
           if (enemy.attackCd > 0) enemy.attackCd -= dt;
-          if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
           if (enemy.strafeTimer > 0) enemy.strafeTimer = Math.max(0, enemy.strafeTimer - dt);
 
           // Status Effect Ticks
@@ -3921,8 +3916,8 @@
             }
 
             enemy.facingAngle = moveHeading;
-            const nex = enemy.x + Math.cos(moveHeading) * enemy.speed * dt;
-            const ney = enemy.y + Math.sin(moveHeading) * enemy.speed * dt;
+            const nex = enemy.x + Math.cos(moveHeading) * this.moveSpeed(enemy) * dt;
+            const ney = enemy.y + Math.sin(moveHeading) * this.moveSpeed(enemy) * dt;
             if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
             if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
 
@@ -4051,7 +4046,7 @@
 
               if (enemy.skulkerState === 'advance') {
                 if (distToTarget > atkRange) {
-                  let curSpeed = enemy.speed;
+                  let curSpeed = this.moveSpeed(enemy);
                   if (distToTarget <= 52) curSpeed *= 1.45; // lunge sprint
                   const nex = enemy.x + Math.cos(angleToTarget) * curSpeed * dt;
                   const ney = enemy.y + Math.sin(angleToTarget) * curSpeed * dt;
@@ -4077,8 +4072,8 @@
               } else if (enemy.skulkerState === 'orbit') {
                 enemy.orbitTimer -= dt;
                 const latA = angleToTarget + (Math.PI / 2) * enemy.orbitDir;
-                const ox = enemy.x + Math.cos(latA) * enemy.speed * dt;
-                const oy = enemy.y + Math.sin(latA) * enemy.speed * dt;
+                const ox = enemy.x + Math.cos(latA) * this.moveSpeed(enemy) * dt;
+                const oy = enemy.y + Math.sin(latA) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(ox, enemy.y)) enemy.x = ox;
                 if (!this.dungeon.isWall(enemy.x, oy)) enemy.y = oy;
 
@@ -4114,8 +4109,8 @@
                   enemy.bashTelegraphTimer = 0.35; // Short telegraph wind-up
                   enemy.bashCd = 3.2;
                 } else if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4139,7 +4134,7 @@
               }
 
               if (moveHeading !== null) {
-                const spd = (distToTarget < 75) ? 155 : enemy.speed;
+                const spd = this.moveSpeed(enemy, (distToTarget < 75) ? 155 : enemy.speed);
                 const nex = enemy.x + Math.cos(moveHeading) * spd * dt;
                 const ney = enemy.y + Math.sin(moveHeading) * spd * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
@@ -4178,8 +4173,8 @@
               }
 
               if (moveHeading !== null) {
-                const nex = enemy.x + Math.cos(moveHeading) * enemy.speed * dt;
-                const ney = enemy.y + Math.sin(moveHeading) * enemy.speed * dt;
+                const nex = enemy.x + Math.cos(moveHeading) * this.moveSpeed(enemy) * dt;
+                const ney = enemy.y + Math.sin(moveHeading) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
               }
@@ -4236,8 +4231,8 @@
                   enemy.telegraphTimer = 0.75;
                   enemy.chargeCd = 3.8;
                 } else if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4261,8 +4256,8 @@
               }
 
               if (enemy.isBurrowed) {
-                const nex = enemy.x + Math.cos(angleToTarget) * (enemy.speed * 1.3) * dt;
-                const ney = enemy.y + Math.sin(angleToTarget) * (enemy.speed * 1.3) * dt;
+                const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy, enemy.speed * 1.3) * dt;
+                const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy, enemy.speed * 1.3) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
 
@@ -4276,8 +4271,8 @@
                 }
               } else {
                 if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4291,8 +4286,8 @@
             // 7. FUD PHANTOM & ARCHON & TITAN BOSS
             else {
               if (distToTarget > atkRange) {
-                const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
               }
@@ -4903,6 +4898,7 @@
             }
           }
 
+          this.lightCtx.globalCompositeOperation = 'source-over';
           this.ctx.drawImage(this.lightCanvas, 0, 0);
 
           // Floating Damage & Text Numbers (Bounded)
@@ -4925,7 +4921,18 @@
 
           // Restore camera screen shake transform
           this.ctx.restore();
-        } catch (e) {}
+        } catch (e) {
+          // This used to be an empty catch. Two things were wrong with
+          // that: every render bug was invisible, and the restore() above
+          // was skipped, so the canvas kept a transform it never popped
+          // and everything drawn afterwards was offset for the rest of the
+          // run. Reset the context and say something - but do not rethrow,
+          // because a cosmetic glitch must not cost somebody a paid run.
+          this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+          if ((this.renderErrors = (this.renderErrors || 0) + 1) <= 3) {
+            console.error('render() threw (' + this.renderErrors + '):', e);
+          }
+        }
       }
 
       renderMinimapRadar() {

@@ -1,0 +1,185 @@
+#!/usr/bin/env node
+'use strict';
+/* Behaviour regression checks.
+ *
+ *     node replay/checks.js
+ *
+ * parity.js proves the browser and the server simulate the same run. It
+ * cannot prove the run does the right thing - a bug reproduces perfectly on
+ * both sides. These checks pin the specific things that were broken and are
+ * now fixed, so nobody quietly reintroduces one.
+ *
+ * They load game.html into the same headless vm the replay uses, so they
+ * test the file we actually ship rather than a copy of its logic. A check
+ * fails by throwing; the string it returns is just something to print.
+ */
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const { makeWindow } = require('./dom.js');
+
+const here = __dirname;
+const SRC = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
+
+function boot() {
+  const html = SRC.split('Math.random(').join('JB.rng(');
+  const scripts = [];
+  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) scripts.push(m[1]);
+  const win = makeWindow();
+  win.JB_MODE = 'play';
+  win.JB_CFG = { practice: true, prices: { entry: 20, refill: 10 } };
+  const ctx = vm.createContext(win);
+  scripts.forEach((s, i) => vm.runInContext(s, ctx, { filename: `game-${i}.js` }));
+  win._fire('DOMContentLoaded');
+  vm.runInContext(fs.readFileSync(path.join(here, '..', 'bridge.js'), 'utf8'), ctx, { filename: 'bridge.js' });
+  const JB = vm.runInContext('JB', ctx);
+  const game = vm.runInContext('game', ctx);
+  JB.run.granted = { seed: 1, id: 'checks', refills_left: 0 };
+  return { JB, game, read: expr => vm.runInContext(expr, ctx) };
+}
+
+/* The bridge turns playerAttack into a queued input; the real call happens
+ * on the next tick. Anything testing what an attack DOES has to tick. */
+function attackOnce(JB, game) {
+  game.player.attackCd = 0;
+  game.player.stamina = game.player.maxStamina;
+  game.playerAttack();
+  JB.tick(game);
+}
+
+let failed = 0;
+function check(name, fn) {
+  try {
+    const detail = fn();
+    console.log(`ok   ${name}${detail ? `  — ${detail}` : ''}`);
+  } catch (e) {
+    failed++;
+    console.log(`FAIL ${name}  — ${e.message || e}`);
+  }
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+// ── three mage traits compared a trait id against a WEAPON id ───────────
+for (const [weapon, flag] of [['storm_wand', 'isChainLightning'],
+                              ['pocket_singularity', 'isSingularity'],
+                              ['debt_codex', 'isMidasCurse']]) {
+  check(`${weapon} fires projectiles carrying ${flag}`, () => {
+    const { JB, game } = boot();
+    game.selectedClassId = 'mage';
+    game.selectedWeaponId = weapon;
+    game.startStoryMode();
+    attackOnce(JB, game);
+    const shots = game.projectiles.filter(p => p.fromPlayer);
+    assert(shots.length, 'no projectile was fired at all');
+    assert(shots.every(p => p[flag] === true), `${flag} came back ${shots[0][flag]}`);
+    return `${shots.length} shot(s)`;
+  });
+}
+
+check('a weapon without those traits does not get them', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'mage';
+  game.selectedWeaponId = 'sapphire_arch_staff';   // arcane_homing
+  game.startStoryMode();
+  attackOnce(JB, game);
+  const p = game.projectiles.find(x => x.fromPlayer);
+  assert(p, 'no projectile was fired at all');
+  assert(p.isHoming === true, 'arcane_homing did not apply');
+  assert(!p.isChainLightning && !p.isSingularity && !p.isMidasCurse,
+    'a trait leaked onto the wrong weapon');
+  return 'homing only';
+});
+
+// ── the skin's stat line has to be the stat you actually get ────────────
+check('skin hpMod and defMod reach the player', () => {
+  const { game, read } = boot();
+  const cls = read('HERO_CLASSES.knight');
+  const skin = read("CLASS_SKINS.knight.find(s => s.id === 'ironbark_vanguard')");
+  game.selectedClassId = 'knight';
+  game.selectedSkinId = 'ironbark_vanguard';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.selectedPerk = null;
+  game.startStoryMode();
+  assert(skin.hpMod && skin.defMod, 'the fixture skin has no modifiers to test');
+  assert(game.player.maxHp === cls.hp + skin.hpMod,
+    `maxHp ${game.player.maxHp}, expected ${cls.hp + skin.hpMod}`);
+  assert(game.player.def === cls.def + skin.defMod,
+    `def ${game.player.def}, expected ${cls.def + skin.defMod}`);
+  return `${game.player.maxHp} hp / ${game.player.def} def`;
+});
+
+check('a skin with no modifiers changes nothing', () => {
+  const { game, read } = boot();
+  const cls = read('HERO_CLASSES.knight');
+  game.selectedClassId = 'knight';
+  game.selectedSkinId = 'sunforged_champion';      // hpMod 0, defMod 0
+  game.selectedWeaponId = 'iron_greatsword';
+  game.selectedPerk = null;
+  game.startStoryMode();
+  assert(game.player.maxHp === cls.hp && game.player.def === cls.def,
+    `${game.player.maxHp}/${game.player.def} vs ${cls.hp}/${cls.def}`);
+  return `${cls.hp} hp / ${cls.def} def`;
+});
+
+check('a negative skin modifier is a real downside', () => {
+  const { game, read } = boot();
+  const cls = read('HERO_CLASSES.knight');
+  game.selectedClassId = 'knight';
+  game.selectedSkinId = 'debt_knight';             // hpMod -10, defMod +4
+  game.selectedWeaponId = 'iron_greatsword';
+  game.selectedPerk = null;
+  game.startStoryMode();
+  assert(game.player.maxHp === cls.hp - 10, `maxHp ${game.player.maxHp}`);
+  assert(game.player.def === cls.def + 4, `def ${game.player.def}`);
+  return `${game.player.maxHp} hp / ${game.player.def} def`;
+});
+
+// ── poison and snares have to actually slow something ──────────────────
+check('slowTimer reduces movement speed', () => {
+  const { game } = boot();
+  const e = { speed: 100, slowTimer: 0 };
+  assert(game.moveSpeed(e) === 100, 'an unslowed enemy moved at a different speed');
+  e.slowTimer = 1; e.slowMul = 0.6;
+  assert(game.moveSpeed(e) === 60, `snared speed ${game.moveSpeed(e)}, expected 60`);
+  e.slowMul = 0.75;
+  assert(game.moveSpeed(e) === 75, `poisoned speed ${game.moveSpeed(e)}, expected 75`);
+  assert(game.moveSpeed(e, 155) === 116.25, 'a caller-supplied speed escaped the slow');
+  return '100 -> 60 snared, 75 poisoned';
+});
+
+check('the snare trait sets both the timer and the amount', () => {
+  const set = SRC.match(/traitId === 'extended_snare'\)\s*\{[^}]*\}/);
+  assert(set, 'the extended_snare branch moved');
+  assert(/slowTimer/.test(set[0]) && /slowMul/.test(set[0]), 'it sets a timer with no amount');
+  return '2.0s at 0.60';
+});
+
+// ── source-level fixes with no runtime handle ──────────────────────────
+check('the light canvas resets its composite mode', () => {
+  const i = SRC.indexOf("globalCompositeOperation = 'destination-out'");
+  const j = SRC.indexOf("globalCompositeOperation = 'source-over'");
+  assert(i > 0 && j > i, 'destination-out is never set back');
+  assert(j < SRC.indexOf('drawImage(this.lightCanvas', i), 'the reset lands after the composite');
+  return 'reset before the sheet is composited';
+});
+
+check('render errors are not swallowed', () => {
+  const body = SRC.slice(SRC.indexOf('render(dt) {'), SRC.indexOf('renderMinimapRadar() {'));
+  assert(!/catch \(e\) \{\}/.test(body), 'render still has an empty catch');
+  assert(/setTransform\(1, 0, 0, 1, 0, 0\)/.test(body), 'a render error leaves the transform stack unbalanced');
+  assert(/console\.error/.test(body), 'a render error says nothing');
+  return 'logged, and the transform is reset';
+});
+
+check('no raw enemy.speed movement reads', () =>
+  assert(!/enemy\.speed \* dt/.test(SRC), 'a movement read bypasses moveSpeed()') || 'all through moveSpeed()');
+
+for (const dead of ['player.cooldown', 'player.invuln', 'player.stagger',
+                    'attackCooldown', 'hazardPuddles', 'aiType']) {
+  check(`${dead} stays gone`, () => assert(!SRC.includes(dead), 'it is referenced again') || '');
+}
+
+console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
+process.exit(failed ? 1 : 0);
