@@ -57,6 +57,11 @@ function main() {
     const JB = vm.runInContext('JB', ctx);
     const res = JB.replay(payload, { refillsAllowed: refills, maxTicks });
     res.ms = Date.now() - t0;
+    // Which engine recorded this, and which one just re-simulated it. If
+    // they differ, nothing below the surface is comparable and the bot must
+    // not read a mismatch as dishonesty.
+    res.payload_version = payload.v || 0;
+    res.engine_version = JB.version;
     res.claimed = payload.claimed || null;
     res.mode = res.mode || payload.mode;
     res.log_entries = (payload.log || []).length;
