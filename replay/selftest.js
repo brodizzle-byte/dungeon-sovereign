@@ -16,8 +16,6 @@ const maxTicks = parseInt(process.argv[4] || '6000', 10);
 
 const here = __dirname;
 let html = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
-html = html.replace("document.getElementById('go-stat-score').innerText = score;\n        this.setState(STATES.GAME_OVER);",
-                    "document.getElementById('go-stat-score').innerText = this.runStats.score;\n        this.setState(STATES.GAME_OVER);");
 html = html.split('Math.random(').join('JB.rng(');   // same rewrite index.php serves
 const scripts = [];
 const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
@@ -109,7 +107,12 @@ while (!JB.run.ended && ticks < maxTicks) {
   ticks++;
 }
 console.log(`reached floor ${maxFloor}`);
-if (!JB.run.ended) { game.triggerGameOver(); }
+// Hitting the tick cap is not a real ending. We still force one so there is
+// a payload to replay, but the comparison below drops the fields the cap
+// invalidates (status/score) and leans on the state hash instead — which is
+// the field that actually proves the two simulations stayed identical.
+const capped = !JB.run.ended;
+if (capped) { game.triggerGameOver(); }
 const payload = JB.lastPayload;
 const recMs = Date.now() - t0;
 const file = path.join(os.tmpdir(), `jb-selftest-${seed}-${mode}.json`);
@@ -121,7 +124,11 @@ console.log(`recorded: ${rec.status} floor ${rec.floor} kills ${rec.kills} gold 
 const out = execFileSync(process.execPath, [path.join(here, 'run.js'), file], { encoding: 'utf8' });
 const rep = JSON.parse(out.trim().split('\n').pop());
 console.log(`replayed: ${rep.status} floor ${rep.floor} kills ${rep.kills} gold ${rep.gold} score ${rep.score} tick ${rep.ticks} rng ${rep.rng_calls} ${rep.ms} ms`);
-const same = rep.status === rec.status && rep.floor === rec.floor && rep.kills === rec.kills &&
-             rep.gold === rec.gold && rep.score === rec.score && rep.ticks === rec.tick;
-console.log(same ? 'MATCH ✅' : 'MISMATCH ❌ ' + JSON.stringify(rep).slice(0, 400));
+const same = capped
+  ? (rep.status === 'NO_END' && rep.hash === rec.hash && rep.ticks === rec.tick &&
+     rep.floor === rec.floor && rep.kills === rec.kills)
+  : (rep.status === rec.status && rep.floor === rec.floor && rep.kills === rec.kills &&
+     rep.gold === rec.gold && rep.score === rec.score && rep.ticks === rec.tick);
+console.log(same ? (capped ? `MATCH ✅ (tick cap, hash ${rep.hash})` : 'MATCH ✅')
+                 : 'MISMATCH ❌ ' + JSON.stringify(rep).slice(0, 400));
 process.exit(same ? 0 : 1);

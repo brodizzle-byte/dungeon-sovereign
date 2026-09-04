@@ -1,4 +1,26 @@
 <!DOCTYPE html>
+<!--
+  Dungeon Sovereign — Degen Edition
+  ---------------------------------
+  Originally written by a JuiceBox member as a single self-contained file.
+  From v7.0 this copy is maintained by JuiceBox and handed back finished:
+  the engine STAYS one standalone game.html with no dependency on anything
+  in this folder, so it can always be lifted out and run on its own.
+
+  The pristine v6.5 the author delivered is the `main` branch of this
+  folder's git repo -- `git show main:game.html` for a byte-exact copy,
+  `git diff main..HEAD -- game.html` for everything we changed.
+
+  JuiceBox's own layer (bridge.js, controls.js, index.php, api.php,
+  replay/) lives OUTSIDE this file and patches it by name at runtime. Two
+  rules that layer imposes, and they are not negotiable:
+    * update() owns simulation state; render() is read-only. The server
+      re-simulates every run WITHOUT rendering, so anything in render()
+      that changes state diverges the replay and the run pays nothing.
+    * No wall-clock time in the simulation. Use this.animTime, which
+      advances by exactly one fixed tick. performance.now() is fine for
+      render-only interpolation and nowhere else.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -151,6 +173,8 @@
           <div class="w-12 sm:w-16 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
             <div id="stam-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-full transition-all duration-100"></div>
           </div>
+          <!-- the attack chain: two dots then FINISHER, blank when it lapses -->
+          <span id="ui-combo" class="text-[10px] font-black tracking-widest text-cyan-300"></span>
         </div>
       </div>
 
@@ -1422,6 +1446,27 @@
     /* ================================================================
        6. PROCEDURAL DUNGEON GENERATOR WITH STRICT SAFETY CAPS
        ================================================================ */
+    // How much of a knockback impulse survives one second: 0.25% of it.
+    // Low enough that a shove is over in about half a second and never
+    // turns into skating.
+    const KNOCK_DRAG = 0.0025;
+    // How long a swing stays "live" for the next one to chain off, and how
+    // much of the recovery will remember a press instead of eating it.
+    // The window has to outlast the recovery or the chain would be
+    // impossible to hit on purpose.
+    // A hostile's swing: telegraph, land, recover, wait. Long enough to
+    // see coming and to walk out of, short enough that a room full of them
+    // is still frightening.
+    const ENEMY_WINDUP = 0.34;
+    const ENEMY_RECOVER = 0.26;
+    const ENEMY_SWING_CD = 0.5;
+    // One landed hit is worth about half a second of the contact damage it
+    // replaces. It has to be worth something - a hit you can avoid entirely
+    // should hurt when it lands - but the old drain was 3.5x a full hit per
+    // second of standing still, and nothing survives that being discrete.
+    const ENEMY_HIT_SCALE = 2.0;
+    const COMBO_WINDOW = 0.4;
+    const ATTACK_BUFFER = 0.15;
     const MAP_SIZE = 32;
     const TILE_SIZE = 32;
     const WORLD_SIZE = MAP_SIZE * TILE_SIZE;
@@ -1433,7 +1478,6 @@
         this.tiles = [];
         this.explored = [];
         this.rooms = [];
-        this.hazardPuddles = [];
         this.sconces = [];
         this.exitPos = { x: 900, y: 900 };
 
@@ -1653,11 +1697,10 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
+        this.fx = [];              // render-owned decoration; update() never touches it
         this.bloodDecals = [];
         this.screenShake = 0;
-        this.hitStopTimer = 0;
         this.floatingTexts = [];
         this.weaponSwings = [];
         this.spawnBeacons = [];
@@ -2321,8 +2364,8 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
+        this.fx = [];              // render-owned decoration; update() never touches it
         this.bloodDecals = [];
         this.screenShake = 0;
         this.hitStopTimer = 0;
@@ -2384,11 +2427,13 @@
       initPlayer() {
         const cls = HERO_CLASSES[this.selectedClassId];
         const weapons = CLASS_WEAPONS[this.selectedClassId] || [];
+        const skins = CLASS_SKINS[this.selectedClassId] || [];
         const curWeapon = weapons.find(w => w.id === this.selectedWeaponId) || weapons[0];
+        const curSkin = skins.find(sk => sk.id === this.selectedSkinId) || skins[0] || {};
 
-        let baseHp = cls.hp;
+        let baseHp = cls.hp + (curSkin.hpMod || 0);
         let baseAtk = cls.atk + (curWeapon.atkMod || 0);
-        let baseDef = cls.def;
+        let baseDef = cls.def + (curSkin.defMod || 0);
         let baseCrit = cls.crit;
         let baseSips = 3;
 
@@ -2441,6 +2486,9 @@
           attackCd: 0,
           attackPhase: 'idle',
           attackProgress: 0,
+          attackBuffered: false,
+          comboStage: 0,
+          comboTimer: 0,
           inventory: [
             { name: curWeapon.name, sprite: cls.sprite, type: 'weapon' },
             { name: 'Custom Sovereign Dye', sprite: cls.sprite, type: 'outfit' }
@@ -2463,7 +2511,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Abyssal Skulker',
             sprite: 'enemy_abyssal_skulker',
-            aiType: 'hunter',
             x, y, radius: 12,
             hp: Math.round(26 + floor * 3.5),
             maxHp: Math.round(26 + floor * 3.5),
@@ -2481,7 +2528,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Void Cultist',
             sprite: 'enemy_void_cultist',
-            aiType: 'kiter',
             x, y, radius: 13,
             hp: Math.round(32 + floor * 3.5),
             maxHp: Math.round(32 + floor * 3.5),
@@ -2500,7 +2546,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Shield Brute (Backstab Required)',
             sprite: 'enemy_shield_brute',
-            aiType: 'tank',
             x, y, radius: 16,
             hp: Math.round(52 + floor * 5.0),
             maxHp: Math.round(52 + floor * 5.0),
@@ -2519,7 +2564,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Toxic Void Spitter',
             sprite: 'enemy_void_spitter',
-            aiType: 'spitter',
             x, y, radius: 14,
             hp: Math.round(42 + floor * 4.5),
             maxHp: Math.round(42 + floor * 4.5),
@@ -2538,7 +2582,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Charging Chad Golem',
             sprite: 'enemy_chad_golem',
-            aiType: 'charger',
             x, y, radius: 17,
             hp: Math.round(60 + floor * 6.0),
             maxHp: Math.round(60 + floor * 6.0),
@@ -2558,7 +2601,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Volatile Burrowing Wyrm',
             sprite: 'enemy_liquidator_wyrm',
-            aiType: 'burrower',
             x, y, radius: 15,
             hp: Math.round(48 + floor * 5.0),
             maxHp: Math.round(48 + floor * 5.0),
@@ -2577,7 +2619,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Elite Archon (Volley Caster)',
             sprite: 'enemy_elite_archon',
-            aiType: 'archon',
             x, y, radius: 15,
             hp: Math.round(54 + floor * 5.5),
             maxHp: Math.round(54 + floor * 5.5),
@@ -2596,7 +2637,6 @@
             faction: 'FACTION_MONSTERS',
             name: 'Cloning FUD Phantom',
             sprite: 'enemy_fud_phantom',
-            aiType: 'phantom_cloner',
             x, y, radius: 13,
             hp: Math.round(36 + floor * 4.0),
             maxHp: Math.round(36 + floor * 4.0),
@@ -2626,7 +2666,6 @@
             sprite: cls.sprite,
             weaponData: randWeapon,
             skinData: randSkin,
-            aiType: 'gladiator',
             x, y, radius: 14,
             hp: Math.round(cls.hp * 0.72),
             maxHp: Math.round(cls.hp * 0.72),
@@ -2652,8 +2691,8 @@
         this.pendingEnemies = [];
         this.projectiles = [];
         this.shockwaves = [];
-        this.hazardPuddles = [];
         this.particles = [];
+        this.fx = [];              // render-owned decoration; update() never touches it
         this.bloodDecals = [];
         this.screenShake = 0;
         this.hitStopTimer = 0;
@@ -2785,19 +2824,37 @@
       }
 
       playerAttack() {
-        if (!this.player || this.player.hp <= 0 || this.player.attackCd > 0) return;
+        if (!this.player || this.player.hp <= 0) return;
+        if (this.player.attackCd > 0) {
+          // Remember the press instead of dropping it. Only near the end of
+          // recovery: buffering the whole window would let someone mash one
+          // button and get a swing queued forever.
+          if (this.player.attackCd <= ATTACK_BUFFER) this.player.attackBuffered = true;
+          return;
+        }
+        this.player.attackBuffered = false;
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 15) {
-            this.addCombatLog('⚠️ Need 15 Stamina to attack!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 15;
           this.player.staminaRegenDelay = 0.45;
         }
 
+        // Light, light, HEAVY. Stage only advances while the previous swing
+        // is still live; let it lapse and the next hit is a first hit again.
+        this.player.comboStage = (this.player.comboTimer > 0 && this.player.comboStage < 2)
+          ? this.player.comboStage + 1 : 0;
+        this.player.comboTimer = COMBO_WINDOW;
+        const isFinisher = (this.player.comboStage === 2);
+
         const wpn = this.player.weaponData || {};
         let cdBase = (this.player.auraState === 'SWEET_SPOT' || this.player.auraState === 'DIABETIC_RAGE') ? 0.17 : 0.22;
+        // The finisher costs time. Without that it is a free damage bonus
+        // for holding the button down rather than something you commit to.
+        if (isFinisher) cdBase *= 1.55;
 
         // Weapon Trait: Flurry / Rapid Crit (Base attack cooldown cut to 0.12s)
         const isFlurry = (wpn.type === 'daggers' || wpn.traitId === 'swift_flurry' || wpn.traitId === 'predator_stalk');
@@ -2806,7 +2863,6 @@
         }
 
         this.player.attackCd = cdBase;
-        this.player.cooldown = cdBase;
         this.player.attackPhase = 'windup';
         this.player.attackProgress = 0;
 
@@ -2826,6 +2882,12 @@
         }
 
         let dmgMultiplier = (this.player.auraState === 'DIABETIC_RAGE') ? 2.5 : 1.0;
+        if (isFinisher) {
+          dmgMultiplier *= 1.6;
+          this.hitStopTimer = Math.max(this.hitStopTimer, 6 / 60);
+          this.addTrauma(0.55, angle);
+          this.spawnFloatingText(this.player.x, this.player.y - 18, 'FINISHER', '#fbbf24', 13);
+        }
 
         // Weapon Trait: Wide Cleave (Hitbox arc expands to 1.65 rad)
         let wpnArc = wpn.arc || Math.PI * 0.65;
@@ -2834,6 +2896,9 @@
         if (isWideCleave) {
           wpnArc = 1.65;
         }
+        // The third swing opens up: it is the one that is supposed to catch
+        // the second enemy standing beside the one you were aiming at.
+        if (isFinisher) wpnArc = Math.min(2.2, wpnArc * 1.35);
 
         // Weapon Trait: Long Reach (Swing reach extends from 50px to 85px with narrower 0.6 rad cone)
         const isLongReach = (wpn.type === 'polearm' || wpn.traitId === 'extended_pierce' || wpn.traitId === 'lunge_thrust');
@@ -2883,12 +2948,12 @@
               isHoming: (wpn.traitId === 'arcane_homing'),
               isExplosiveAOE: (wpn.traitId === 'ignition_blast' || isFire),
               pierceCount: (wpn.traitId === 'piercing_beam') ? 3 : 0,
-              isChainLightning: (wpn.traitId === 'storm_wand'),
-              isSingularity: (wpn.traitId === 'pocket_singularity'),
-              isMidasCurse: (wpn.traitId === 'debt_codex')
+              isChainLightning: (wpn.traitId === 'chain_lightning'),
+              isSingularity: (wpn.traitId === 'singularity_collapse'),
+              isMidasCurse: (wpn.traitId === 'midas_curse')
             });
           }
-          this.screenShake = 0.2;
+          this.addTrauma(0.2, angle);
         } else if (this.player.classData.id === 'assassin') {
           SFX.daggerStab();
           this.triggerWeaponAnimation(angle, wpnArc, wpnRange, this.player.atk * 1.15 * dmgMultiplier, this.player.auraState === 'DIABETIC_RAGE' ? '#f59e0b' : (wpn.color || '#c084fc'));
@@ -2976,18 +3041,16 @@
               const isStaggerWeapon = (wpn.type === 'warhammer' || wpn.traitId === 'stun_impact' || wpn.traitId === 'armor_sunder');
               if (isStaggerWeapon) {
                 enemy.stunTimer = 0.5;
-                enemy.attackCooldown = Math.max(enemy.attackCooldown || 0, 0.5);
                 enemy.attackCd = Math.max(enemy.attackCd || 0, 0.5);
-                enemy.x += Math.cos(centerAngle) * 35;
-                enemy.y += Math.sin(centerAngle) * 35;
+                this.knockback(enemy, centerAngle, 35);
+                this.hitStopTimer = Math.max(this.hitStopTimer, 5 / 60);
+                this.addTrauma(0.6, centerAngle);
                 this.spawnFloatingText(enemy.x, enemy.y, 'STUN (0.5s)', '#fbbf24', 13);
               }
 
               // Trait: Wide Cleave Knockback (+15% knockback)
               if (wpn.type === 'greatsword' || wpn.traitId === 'heavy_cleave') {
-                const kb = 28 * 1.15;
-                enemy.x += Math.cos(centerAngle) * kb;
-                enemy.y += Math.sin(centerAngle) * kb;
+                this.knockback(enemy, centerAngle, 28 * 1.15);
               }
 
               // Trait: Life Leech (30% chance to restore 3 HP on hit)
@@ -3008,6 +3071,8 @@
                 enemy.poisonTicks = 4;
                 enemy.poisonDmg = Math.max(2, Math.round(dmg * 0.2));
                 enemy.slowTimer = 2.0;
+                enemy.slowMul = 0.75;    // "slowing by 25%"
+
                 this.spawnFloatingText(enemy.x, enemy.y, 'POISONED', '#22c55e', 12);
               }
 
@@ -3039,12 +3104,12 @@
               // Trait: Extended Snare (Slow enemy by 40%)
               if (wpn.traitId === 'extended_snare') {
                 enemy.slowTimer = 2.0;
+                enemy.slowMul = 0.60;    // "slows enemy movement by 40%"
               }
 
               // Trait: Vortex Pull (Pull enemy 25px toward player)
               if (wpn.traitId === 'vortex_pull') {
-                enemy.x -= Math.cos(centerAngle) * 25;
-                enemy.y -= Math.sin(centerAngle) * 25;
+                this.knockback(enemy, centerAngle + Math.PI, 25);
               }
 
               enemy.hp -= dmg;
@@ -3085,8 +3150,7 @@
                 this.spawnFloatingText(enemy.x, enemy.y, `${dmg}`, '#ffffff', 13);
               }
 
-              enemy.x += Math.cos(centerAngle) * 12;
-              enemy.y += Math.sin(centerAngle) * 12;
+              this.knockback(enemy, centerAngle, 12);
 
               if (enemy.hp <= 0) this.onEnemyKilled(enemy);
             }
@@ -3105,7 +3169,7 @@
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 30) {
-            this.addCombatLog('⚠️ Need 30 Stamina for heavy skill!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 30;
@@ -3170,7 +3234,7 @@
 
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 25) {
-            this.addCombatLog('⚠️ Need 25 Stamina to dodge roll!', 'text-amber-400');
+            this.flashStamina();
             return;
           }
           this.player.stamina -= 25;
@@ -3276,32 +3340,132 @@
           });
         }
 
-        if (isCrit) {
-          this.hitStopTimer = 0.025; // Subtle 25ms screen hit-stop
-          this.screenShake = 1.0;
+        // Freeze whole FRAMES, never fractions of one: the server counts
+        // ticks, and a freeze that ends mid-tick would put the two
+        // simulations on different sides of the same frame. The tick still
+        // happens and still counts - it just skips its update.
+        // One frame on a normal connect is enough to read as weight; four
+        // on a crit is the pause you actually feel. Any more than that on
+        // an ordinary hit and a fast weapon spends a quarter of the fight
+        // frozen.
+        this.hitStopTimer = Math.max(this.hitStopTimer, (isCrit ? 4 : 1) / 60);
+        this.addTrauma(isCrit ? 0.85 : 0.35, strikeAngle);
+      }
+
+      // How fast this hostile actually moves right now. Pass `base` when
+      // the caller has its own speed (a lunge, a boss charge) so the slow
+      // applies to that too. Keep every movement read going through here:
+      // enemy.speed is the BASE, and writing an effect straight onto it
+      // fights with the archetypes that reassign speed each frame.
+      // Push something instead of teleporting it. The impulse lands on
+      // kx/ky and drains over about half a second, so a hit reads as force
+      // rather than a change of address. `px` is how far the old code
+      // moved the target instantly; the 6 converts that distance into the
+      // starting velocity that covers it under KNOCK_DRAG.
+      knockback(e, angle, px) {
+        e.kx = (e.kx || 0) + Math.cos(angle) * px * 6;
+        e.ky = (e.ky || 0) + Math.sin(angle) * px * 6;
+      }
+
+      // Drain that impulse, one entity, one tick. Per-axis wall tests, the
+      // same ones the AI moves with: before this, five of the seven
+      // knockbacks in the game skipped the wall check entirely and could
+      // shove an enemy into solid rock.
+      stepKnockback(e, dt) {
+        if (!e.kx && !e.ky) return;
+        const nx = e.x + e.kx * dt;
+        const ny = e.y + e.ky * dt;
+        if (this.dungeon && this.dungeon.isWall(nx, e.y)) e.kx = 0; else e.x = nx;
+        if (this.dungeon && this.dungeon.isWall(e.x, ny)) e.ky = 0; else e.y = ny;
+        const drag = Math.pow(KNOCK_DRAG, dt);
+        e.kx *= drag;
+        e.ky *= drag;
+        if (Math.abs(e.kx) < 1) e.kx = 0;
+        if (Math.abs(e.ky) < 1) e.ky = 0;
+      }
+
+      // Trauma, not a jitter. It accumulates, decays on its own clock, and
+      // remembers WHICH WAY the hit came from so the camera kicks along
+      // that axis instead of vibrating in place. Kept on `screenShake`
+      // because the bridge resets that field by name at the start of a run.
+      addTrauma(amount, angle) {
+        this.screenShake = Math.min(1, (this.screenShake || 0) + amount);
+        if (angle != null) this.shakeAngle = angle;
+      }
+
+      moveSpeed(e, base) {
+        const spd = (base == null) ? e.speed : base;
+        return (e.slowTimer > 0) ? spd * (e.slowMul || 0.75) : spd;
+      }
+
+      // A hostile ASKS to attack; it does not deal damage by touching you.
+      // `instant` is for the archetypes that ran their own telegraph
+      // already - the brute's bash, the golem's charge, the burrower
+      // surfacing - which would otherwise wind up twice.
+      applyEnemyMeleeHit(enemy, dt, multiplier = 1.0, instant = false) {
+        if (instant) { this.resolveEnemyStrike(enemy, multiplier); return; }
+        if (enemy.atkState || (enemy.swingCd || 0) > 0 || enemy.stunTimer > 0) return;
+        enemy.atkState = 'windup';
+        enemy.atkTimer = ENEMY_WINDUP;
+        enemy.atkMul = multiplier;
+        enemy.atkRange = 0;   // filled in when the swing lands
+      }
+
+      // Drive one hostile's swing. Called every tick, before the stun check,
+      // so that stunning something mid-windup actually cancels the swing -
+      // which is the entire point of stunning it.
+      stepEnemyAttack(enemy, dt) {
+        if (enemy.swingCd > 0) enemy.swingCd -= dt;
+        if (!enemy.atkState) return;
+        if (enemy.stunTimer > 0 || enemy.dead) {
+          enemy.atkState = null;
+          enemy.swingCd = ENEMY_SWING_CD;
+          return;
+        }
+        enemy.atkTimer -= dt;
+        if (enemy.atkTimer > 0) return;
+        if (enemy.atkState === 'windup') {
+          // The swing only connects if you are still standing in it.
+          const reach = enemy.radius + this.player.radius + 20;
+          if (Math.hypot(this.player.x - enemy.x, this.player.y - enemy.y) <= reach) {
+            this.resolveEnemyStrike(enemy, enemy.atkMul || 1);
+          } else {
+            this.spawnFloatingText(enemy.x, enemy.y - 14, 'MISS', '#94a3b8', 11);
+          }
+          enemy.atkState = 'recover';
+          enemy.atkTimer = ENEMY_RECOVER;
         } else {
-          this.screenShake = 0.4;
+          enemy.atkState = null;
+          enemy.swingCd = ENEMY_SWING_CD;
         }
       }
 
-      applyEnemyMeleeHit(enemy, dt, multiplier = 1.0) {
+      // One landed blow. Everything that used to happen a sliver at a time,
+      // happening once.
+      resolveEnemyStrike(enemy, multiplier = 1.0) {
+        const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
         if (this.spawnGraceTimer > 0) {
           this.spawnFloatingText(this.player.x, this.player.y, 'IMMUNE', '#38bdf8', 12);
-        } else if (this.player.isDodging) {
-          this.runStats.damageMitigated += Math.round(enemy.atk * dt * 3.5 * multiplier);
-        } else {
-          const dmg = Math.max(1, Math.round((enemy.atk * multiplier) * 0.75 - this.player.def * 0.35));
-          this.player.hp -= dmg * dt * 3.5;
-          if (Math.random() < 0.08) {
-            SFX.hit();
-            triggerHaptic('heavy');
-            this.screenShake = 0.35;
-          }
-          this.updateHUD();
-          if (this.player.hp <= 0) {
-            this.runStats.causeOfDeath = `${enemy.name} Strike`;
-            this.triggerGameOver();
-          }
+          return;
+        }
+        const raw = Math.max(1, Math.round((enemy.atk * multiplier) * 0.75 - this.player.def * 0.35));
+        const dmg = Math.max(1, Math.round(raw * ENEMY_HIT_SCALE));
+        if (this.player.isDodging) {
+          this.runStats.damageMitigated += dmg;
+          this.spawnFloatingText(this.player.x, this.player.y, 'DODGED!', '#38bdf8', 13);
+          return;
+        }
+        this.player.hp -= dmg;
+        SFX.hit();
+        triggerHaptic('heavy');
+        this.addTrauma(0.45, angle);
+        this.hitStopTimer = Math.max(this.hitStopTimer, 2 / 60);
+        this.knockback(this.player, angle, 14);
+        this.spawnFloatingText(this.player.x, this.player.y, `-${dmg}`, '#ef4444', 15);
+        this.updateHUD();
+        if (this.player.hp <= 0) {
+          this.runStats.causeOfDeath = `${enemy.name} Strike`;
+          this.triggerGameOver();
         }
       }
 
@@ -3391,9 +3555,6 @@
         }
 
         // Time-scaled player timers & cooldowns
-        if (this.player.cooldown > 0) this.player.cooldown = Math.max(0, this.player.cooldown - dt);
-        if (this.player.invuln > 0) this.player.invuln = Math.max(0, this.player.invuln - dt);
-        if (this.player.stagger > 0) this.player.stagger = Math.max(0, this.player.stagger - dt);
 
         // SUGAR & AURA STATE MACHINE
         if (this.player.crashTimer > 0) {
@@ -3460,6 +3621,19 @@
         }
 
         // Attack Phase & Cooldown
+        // The chain window, and the press we promised to remember. Calling
+        // playerAttack() from inside update() is safe and identical on both
+        // sides: the wrapper routes a call made during a tick straight to
+        // the real one instead of queueing it for the next tick.
+        if (this.player.comboTimer > 0) {
+          this.player.comboTimer -= dt;
+          if (this.player.comboTimer <= 0) this.player.comboStage = 0;
+        }
+        if (this.player.attackCd <= 0 && this.player.attackBuffered) {
+          this.player.attackBuffered = false;
+          this.playerAttack();
+        }
+
         if (this.player.attackCd > 0) {
           this.player.attackCd -= dt;
           this.player.attackProgress = 1 - (this.player.attackCd / 0.22);
@@ -3519,6 +3693,10 @@
             this.player.facingAngle = moveAngle;
           }
         }
+
+        // Knockback rides on top of whatever the player did this tick,
+        // so being shoved does not cancel their control - it fights it.
+        this.stepKnockback(this.player, dt);
 
         // Clamp inside map boundaries
         this.player.x = Math.max(20, Math.min(WORLD_SIZE - 20, this.player.x));
@@ -3596,7 +3774,7 @@
                 this.runStats.maxHit = Math.max(this.runStats.maxHit, dmg);
                 SFX.hit();
                 triggerHaptic('hit');
-                this.screenShake = 0.4;
+                this.addTrauma(0.4, Math.atan2(p.vy, p.vx));
                 this.spawnFloatingText(enemy.x, enemy.y, `${dmg}`, '#ffffff', 14);
 
                 // Rich Blood Burst & Decals
@@ -3708,6 +3886,17 @@
           if (p.life <= 0 || this.dungeon.isWall(p.x, p.y)) this.projectiles.splice(i, 1);
         }
 
+        // Floating Text Update. This used to happen inside render(), which
+        // meant the server's copy of the run never expired a single one.
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+          const ft = this.floatingTexts[i];
+          ft.x += (ft.vx || 0) * dt;
+          ft.y += ft.vy * dt;
+          ft.vy += 165 * dt;                 // gravity: up fast, back down slow
+          ft.life -= dt;
+          if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+        }
+
         // Particles Update (Bounded)
         for (let i = this.particles.length - 1; i >= 0; i--) {
           const pt = this.particles[i];
@@ -3800,8 +3989,13 @@
 
           if (enemy.hpFadeTimer > 0) enemy.hpFadeTimer -= dt;
           if (enemy.attackCd > 0) enemy.attackCd -= dt;
-          if (enemy.attackCooldown > 0) enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
           if (enemy.strafeTimer > 0) enemy.strafeTimer = Math.max(0, enemy.strafeTimer - dt);
+
+          // Before the stun check on purpose: being stunned is exactly when
+          // a hostile should still be sliding from the hit that stunned it,
+          // and exactly when its half-finished swing should be cancelled.
+          this.stepKnockback(enemy, dt);
+          this.stepEnemyAttack(enemy, dt);
 
           // Status Effect Ticks
           if (enemy.stunTimer > 0) {
@@ -3899,8 +4093,8 @@
             }
 
             enemy.facingAngle = moveHeading;
-            const nex = enemy.x + Math.cos(moveHeading) * enemy.speed * dt;
-            const ney = enemy.y + Math.sin(moveHeading) * enemy.speed * dt;
+            const nex = enemy.x + Math.cos(moveHeading) * this.moveSpeed(enemy) * dt;
+            const ney = enemy.y + Math.sin(moveHeading) * this.moveSpeed(enemy) * dt;
             if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
             if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
 
@@ -4029,7 +4223,7 @@
 
               if (enemy.skulkerState === 'advance') {
                 if (distToTarget > atkRange) {
-                  let curSpeed = enemy.speed;
+                  let curSpeed = this.moveSpeed(enemy);
                   if (distToTarget <= 52) curSpeed *= 1.45; // lunge sprint
                   const nex = enemy.x + Math.cos(angleToTarget) * curSpeed * dt;
                   const ney = enemy.y + Math.sin(angleToTarget) * curSpeed * dt;
@@ -4055,8 +4249,8 @@
               } else if (enemy.skulkerState === 'orbit') {
                 enemy.orbitTimer -= dt;
                 const latA = angleToTarget + (Math.PI / 2) * enemy.orbitDir;
-                const ox = enemy.x + Math.cos(latA) * enemy.speed * dt;
-                const oy = enemy.y + Math.sin(latA) * enemy.speed * dt;
+                const ox = enemy.x + Math.cos(latA) * this.moveSpeed(enemy) * dt;
+                const oy = enemy.y + Math.sin(latA) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(ox, enemy.y)) enemy.x = ox;
                 if (!this.dungeon.isWall(enemy.x, oy)) enemy.y = oy;
 
@@ -4077,11 +4271,10 @@
                   SFX.hit();
                   // Forward knockback bash across gap
                   if (distToTarget <= 52) {
-                    this.applyEnemyMeleeHit(enemy, dt, 1.4);
-                    const pbx = this.player.x + Math.cos(angleToTarget) * 50;
-                    const pby = this.player.y + Math.sin(angleToTarget) * 50;
-                    if (!this.dungeon.isWall(pbx, this.player.y)) this.player.x = pbx;
-                    if (!this.dungeon.isWall(this.player.x, pby)) this.player.y = pby;
+                    this.applyEnemyMeleeHit(enemy, dt, 1.4, true);
+                    this.knockback(this.player, angleToTarget, 50);
+                    this.hitStopTimer = Math.max(this.hitStopTimer, 3 / 60);
+                    this.addTrauma(0.7, angleToTarget);
                     this.spawnFloatingText(this.player.x, this.player.y, 'KNOCKBACK BASH!', '#38bdf8', 13);
                   }
                 }
@@ -4092,8 +4285,8 @@
                   enemy.bashTelegraphTimer = 0.35; // Short telegraph wind-up
                   enemy.bashCd = 3.2;
                 } else if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4117,7 +4310,7 @@
               }
 
               if (moveHeading !== null) {
-                const spd = (distToTarget < 75) ? 155 : enemy.speed;
+                const spd = this.moveSpeed(enemy, (distToTarget < 75) ? 155 : enemy.speed);
                 const nex = enemy.x + Math.cos(moveHeading) * spd * dt;
                 const ney = enemy.y + Math.sin(moveHeading) * spd * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
@@ -4156,8 +4349,8 @@
               }
 
               if (moveHeading !== null) {
-                const nex = enemy.x + Math.cos(moveHeading) * enemy.speed * dt;
-                const ney = enemy.y + Math.sin(moveHeading) * enemy.speed * dt;
+                const nex = enemy.x + Math.cos(moveHeading) * this.moveSpeed(enemy) * dt;
+                const ney = enemy.y + Math.sin(moveHeading) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
               }
@@ -4194,7 +4387,7 @@
                   enemy.y = chy;
                 }
                 if (target === this.player && distToTarget <= atkRange + 8) {
-                  this.applyEnemyMeleeHit(enemy, dt, 2.2);
+                  this.applyEnemyMeleeHit(enemy, dt, 2.2, true);
                   this.player.x += Math.cos(enemy.chargeAngle) * 35;
                   this.player.y += Math.sin(enemy.chargeAngle) * 35;
                 }
@@ -4214,8 +4407,8 @@
                   enemy.telegraphTimer = 0.75;
                   enemy.chargeCd = 3.8;
                 } else if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4233,14 +4426,14 @@
                 enemy.isBurrowed = !enemy.isBurrowed;
                 enemy.burrowTimer = enemy.isBurrowed ? 1.4 : 2.2;
                 if (!enemy.isBurrowed && distToTarget <= 45) {
-                  this.applyEnemyMeleeHit(enemy, dt, 1.5);
+                  this.applyEnemyMeleeHit(enemy, dt, 1.5, true);
                   SFX.hit();
                 }
               }
 
               if (enemy.isBurrowed) {
-                const nex = enemy.x + Math.cos(angleToTarget) * (enemy.speed * 1.3) * dt;
-                const ney = enemy.y + Math.sin(angleToTarget) * (enemy.speed * 1.3) * dt;
+                const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy, enemy.speed * 1.3) * dt;
+                const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy, enemy.speed * 1.3) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
 
@@ -4254,8 +4447,8 @@
                 }
               } else {
                 if (distToTarget > atkRange) {
-                  const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                  const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                  const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                  const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                   if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                   if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
                 }
@@ -4269,8 +4462,8 @@
             // 7. FUD PHANTOM & ARCHON & TITAN BOSS
             else {
               if (distToTarget > atkRange) {
-                const nex = enemy.x + Math.cos(angleToTarget) * enemy.speed * dt;
-                const ney = enemy.y + Math.sin(angleToTarget) * enemy.speed * dt;
+                const nex = enemy.x + Math.cos(angleToTarget) * this.moveSpeed(enemy) * dt;
+                const ney = enemy.y + Math.sin(angleToTarget) * this.moveSpeed(enemy) * dt;
                 if (!this.dungeon.isWall(nex, enemy.y)) enemy.x = nex;
                 if (!this.dungeon.isWall(enemy.x, ney)) enemy.y = ney;
               }
@@ -4392,9 +4585,11 @@
           if (this.bloodDecals[b].life <= 0) this.bloodDecals.splice(b, 1);
         }
 
-        // Screen shake decay
+        // Trauma decay. Slower than the old shake because the amplitude is
+        // squared below: it starts hard and tails off instead of stopping
+        // dead, which is the whole difference between a kick and a buzz.
         if (this.screenShake > 0) {
-          this.screenShake = Math.max(0, this.screenShake - dt * 6.5);
+          this.screenShake = Math.max(0, this.screenShake - dt * 2.6);
         }
 
         // CAMERA DEADZONE & DAMPING
@@ -4429,38 +4624,33 @@
       render(dt) {
         try {
           // Camera Screen Shake Translation
-          const shakeX = (this.screenShake > 0) ? (Math.random() - 0.5) * this.screenShake * 5.0 : 0;
-          const shakeY = (this.screenShake > 0) ? (Math.random() - 0.5) * this.screenShake * 5.0 : 0;
+          // Directional kick along the hit axis, amplitude squared so it
+          // falls off fast, plus a small perpendicular wobble so it does not
+          // read as a straight line. No randomness at all - this used to
+          // draw from Math.random every frame for a jitter nobody could see.
+          let shakeX = 0, shakeY = 0;
+          if (this.screenShake > 0) {
+            const amp = this.screenShake * this.screenShake * 9;
+            const a = this.shakeAngle || 0;
+            const wob = Math.sin(this.animTime * 52);
+            const side = Math.sin(this.animTime * 31) * 0.35;
+            shakeX = (Math.cos(a) * wob - Math.sin(a) * side) * amp;
+            shakeY = (Math.sin(a) * wob + Math.cos(a) * side) * amp;
+          }
           this.ctx.save();
           this.ctx.translate(shakeX, shakeY);
 
           this.ctx.fillStyle = this.dungeon ? this.dungeon.floorColor : '#040609';
           this.ctx.fillRect(0, 0, 480, 480);
 
-          const startTx = Math.max(0, Math.floor(this.cam.x / TILE_SIZE));
-          const endTx = Math.min(MAP_SIZE, Math.ceil((this.cam.x + 480) / TILE_SIZE));
-          const startTy = Math.max(0, Math.floor(this.cam.y / TILE_SIZE));
-          const endTy = Math.min(MAP_SIZE, Math.ceil((this.cam.y + 480) / TILE_SIZE));
-
-          for (let ty = startTy; ty < endTy; ty++) {
-            for (let tx = startTx; tx < endTx; tx++) {
-              const rx = tx * TILE_SIZE - this.cam.x;
-              const ry = ty * TILE_SIZE - this.cam.y;
-              const tile = this.dungeon.tiles[ty][tx];
-
-              if (tile === 1) {
-                this.ctx.fillStyle = this.dungeon.wallColor;
-                this.ctx.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
-                this.ctx.strokeStyle = '#1e293d';
-                this.ctx.strokeRect(rx, ry, TILE_SIZE, TILE_SIZE);
-              } else {
-                this.ctx.fillStyle = this.dungeon.floorColor;
-                this.ctx.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
-                this.ctx.fillStyle = '#141c2c';
-                this.ctx.fillRect(rx + 15, ry + 15, 2, 2);
-              }
-            }
-          }
+          // The map is the same every frame of a floor, so it is painted
+          // once into an offscreen canvas and blitted. That is ~900 canvas
+          // calls a frame replaced by one, and it is where the headroom for
+          // lighting and depth comes from. Built lazily HERE, in render:
+          // the server re-simulates without rendering and must never touch
+          // a canvas.
+          if (!this.dungeon.tileLayer) this.buildTileLayer(this.dungeon);
+          this.ctx.drawImage(this.dungeon.tileLayer, -this.cam.x, -this.cam.y);
 
           // Persistent Blood Decals on Floor
           for (let b = 0; b < this.bloodDecals.length; b++) {
@@ -4595,8 +4785,18 @@
             this.ctx.restore();
           });
 
+          // Decoration this frame owns: advance it here, because update()
+          // never sees it and the server never runs this code.
+          for (let i = this.fx.length - 1; i >= 0; i--) {
+            const f = this.fx[i];
+            f.x += f.vx * dt;
+            f.y += f.vy * dt;
+            f.life -= dt;
+            if (f.life <= 0) this.fx.splice(i, 1);
+          }
+
           // Particles with Stone Debris and Decelerating Blood Droplets
-          this.particles.forEach(pt => {
+          this.particles.concat(this.fx).forEach(pt => {
             this.ctx.save();
             const px = pt.x - this.cam.x;
             const py = pt.y - this.cam.y;
@@ -4625,6 +4825,22 @@
             const ex = enemy.x - this.cam.x;
             const ey = enemy.y - this.cam.y;
             const bobY = Math.sin(this.animTime * 8 + enemy.x) * 2;
+
+            // Windup telegraph: a ring that closes onto the hostile as the
+            // swing arrives, red while it is coming, white on the frame it
+            // lands. Without this the discrete attack is just contact
+            // damage with extra steps and worse feedback.
+            if (enemy.atkState === 'windup') {
+              const t = 1 - Math.max(0, enemy.atkTimer / ENEMY_WINDUP);
+              this.ctx.save();
+              this.ctx.globalAlpha = 0.35 + t * 0.5;
+              this.ctx.strokeStyle = t > 0.9 ? '#ffffff' : '#ef4444';
+              this.ctx.lineWidth = 2 + t * 2;
+              this.ctx.beginPath();
+              this.ctx.arc(ex, ey, enemy.radius + 26 - t * 22, 0, Math.PI * 2);
+              this.ctx.stroke();
+              this.ctx.restore();
+            }
 
             if (enemy.boss && enemy.phase === 2) {
               this.ctx.save();
@@ -4707,11 +4923,13 @@
               this.ctx.arc(px, py, curRadius * 1.5, 0, Math.PI * 2);
               this.ctx.fill();
 
-              // Radial flame particles trailing behind
+              // Radial flame particles trailing behind. These live in the
+              // render-owned pool: they are decoration, and the simulation
+              // must not be able to see how many of them exist.
               if (Math.random() < 0.65) {
-                if (this.particles.length > 140) this.particles.shift();
+                if (this.fx.length > 140) this.fx.shift();
                 const flareA = Math.random() * Math.PI * 2;
-                this.particles.push({
+                this.fx.push({
                   x: p.x + Math.cos(flareA) * (curRadius * 0.4),
                   y: p.y + Math.sin(flareA) * (curRadius * 0.4),
                   vx: -p.vx * 0.15 + (Math.random() - 0.5) * 30,
@@ -4768,10 +4986,10 @@
                 this.ctx.fill();
               }
 
-              // Fading tail motes
+              // Fading tail motes - render-owned, same as the flame trail
               if (Math.random() < 0.6) {
-                if (this.particles.length > 140) this.particles.shift();
-                this.particles.push({
+                if (this.fx.length > 140) this.fx.shift();
+                this.fx.push({
                   x: p.x - p.vx * 0.02,
                   y: p.y - p.vy * 0.02,
                   vx: -p.vx * 0.05 + (Math.random() - 0.5) * 10,
@@ -4789,8 +5007,12 @@
           const plY = this.player.y - this.cam.y;
           const isMoving = (this.player.vx !== 0 || this.player.vy !== 0);
           const moveSpeed = isMoving ? 1 : 0;
-          const pBobY = isMoving ? (Math.sin(performance.now() * 0.012 * moveSpeed) * 2.5) : (Math.sin(performance.now() * 0.003) * 0.8);
-          const pTiltAngle = isMoving ? ((Math.cos(performance.now() * 0.012 * moveSpeed) * 0.08) * Math.sign(this.player.vx || 1)) : 0;
+          // animTime, not performance.now(). The simulation advances this by
+          // exactly one fixed tick, so the bob is the same on the tenth
+          // replay as it was on the screen - and nothing here can ever
+          // become an input to the run without the clock going with it.
+          const pBobY = isMoving ? (Math.sin(this.animTime * 12 * moveSpeed) * 2.5) : (Math.sin(this.animTime * 3) * 0.8);
+          const pTiltAngle = isMoving ? ((Math.cos(this.animTime * 12 * moveSpeed) * 0.08) * Math.sign(this.player.vx || 1)) : 0;
 
           // Aura glow effects
           this.ctx.save();
@@ -4881,14 +5103,17 @@
             }
           }
 
+          this.lightCtx.globalCompositeOperation = 'source-over';
           this.ctx.drawImage(this.lightCanvas, 0, 0);
 
           // Floating Damage & Text Numbers (Bounded)
-          for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+          for (let i = 0; i < this.floatingTexts.length; i++) {
             const ft = this.floatingTexts[i];
-            ft.y += ft.vy;
-            ft.life -= dt;
             this.ctx.save();
+            // Fade over the last third of its life, so numbers leave rather
+            // than blink out.
+            const fade = Math.min(1, (ft.life / (ft.maxLife || 0.85)) * 3);
+            this.ctx.globalAlpha = Math.max(0, fade);
             this.ctx.font = `bold ${ft.size}px JetBrains Mono`;
             this.ctx.fillStyle = ft.color;
             this.ctx.textAlign = 'center';
@@ -4896,14 +5121,52 @@
             this.ctx.shadowBlur = 5;
             this.ctx.fillText(ft.text, ft.x - this.cam.x, ft.y - this.cam.y);
             this.ctx.restore();
-            if (ft.life <= 0) this.floatingTexts.splice(i, 1);
           }
 
           this.renderMinimapRadar();
 
           // Restore camera screen shake transform
           this.ctx.restore();
-        } catch (e) {}
+        } catch (e) {
+          // This used to be an empty catch. Two things were wrong with
+          // that: every render bug was invisible, and the restore() above
+          // was skipped, so the canvas kept a transform it never popped
+          // and everything drawn afterwards was offset for the rest of the
+          // run. Reset the context and say something - but do not rethrow,
+          // because a cosmetic glitch must not cost somebody a paid run.
+          this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+          if ((this.renderErrors = (this.renderErrors || 0) + 1) <= 3) {
+            console.error('render() threw (' + this.renderErrors + '):', e);
+          }
+        }
+      }
+
+      // Paint a whole floor's tiles into one offscreen canvas. Same draw
+      // order as the per-frame loop it replaced, so the result is identical
+      // pixel for pixel - walls still stroke over their neighbours in
+      // row-major order.
+      buildTileLayer(dungeon) {
+        const c = document.createElement('canvas');
+        c.width = MAP_SIZE * TILE_SIZE;
+        c.height = MAP_SIZE * TILE_SIZE;
+        const g = c.getContext('2d');
+        for (let ty = 0; ty < MAP_SIZE; ty++) {
+          for (let tx = 0; tx < MAP_SIZE; tx++) {
+            const rx = tx * TILE_SIZE, ry = ty * TILE_SIZE;
+            if (dungeon.tiles[ty][tx] === 1) {
+              g.fillStyle = dungeon.wallColor;
+              g.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
+              g.strokeStyle = '#1e293d';
+              g.strokeRect(rx, ry, TILE_SIZE, TILE_SIZE);
+            } else {
+              g.fillStyle = dungeon.floorColor;
+              g.fillRect(rx, ry, TILE_SIZE, TILE_SIZE);
+              g.fillStyle = '#141c2c';
+              g.fillRect(rx + 15, ry + 15, 2, 2);
+            }
+          }
+        }
+        dungeon.tileLayer = c;
       }
 
       renderMinimapRadar() {
@@ -4950,7 +5213,18 @@
 
       spawnFloatingText(x, y, text, color, size = 14) {
         if (this.floatingTexts.length > 30) this.floatingTexts.shift();
-        this.floatingTexts.push({ x, y, vy: -0.8, text, color, size, life: 0.8 });
+        // Thrown, not slid. vy is per SECOND now: the old value moved a
+        // pixel per TICK, so the number drifted at whatever frame rate the
+        // phone happened to be running. The sideways spread is taken from
+        // how many numbers are already up rather than from a random draw -
+        // two hits on the same target should not stack into a blur, and a
+        // cosmetic has no business spending the run's seeded RNG.
+        this.floatingTexts.push({
+          x, y, text, color, size,
+          vx: ((this.floatingTexts.length % 5) - 2) * 13,
+          vy: -62,
+          life: 0.85, maxLife: 0.85,
+        });
       }
 
       saveRun(status = 'CLEARED') {
@@ -5037,7 +5311,7 @@
         document.getElementById('go-stat-overdoses').innerText = this.runStats.sugarOverdoses;
         document.getElementById('go-stat-mitigated').innerText = `${this.runStats.damageMitigated} DMG`;
         document.getElementById('go-stat-cause').innerText = 'Victorious Sovereign';
-        document.getElementById('go-stat-score').innerText = score;
+        document.getElementById('go-stat-score').innerText = this.runStats.score;
         this.setState(STATES.GAME_OVER);
       }
 
@@ -5068,12 +5342,35 @@
         document.getElementById('go-stat-overdoses').innerText = this.runStats.sugarOverdoses;
         document.getElementById('go-stat-mitigated').innerText = `${this.runStats.damageMitigated} DMG`;
         document.getElementById('go-stat-cause').innerText = this.runStats.causeOfDeath;
-        document.getElementById('go-stat-score').innerText = score;
+        document.getElementById('go-stat-score').innerText = this.runStats.score;
         this.setState(STATES.GAME_OVER);
+      }
+
+      // The bar being empty is the message. This used to write a line into
+      // the combat log on every blocked press - several a second while
+      // someone held the attack button - which pushed everything the log
+      // exists for straight off the top of it.
+      flashStamina() {
+        const bar = document.getElementById('stam-bar');
+        if (!bar || this.stamFlashing) return;
+        this.stamFlashing = true;
+        bar.style.filter = 'brightness(2.6) saturate(2)';
+        setTimeout(() => {
+          bar.style.filter = '';
+          this.stamFlashing = false;
+        }, 110);
       }
 
       updateHUD() {
         if (!this.player) return;
+        const chain = document.getElementById('ui-combo');
+        if (chain) {
+          const stage = this.player.comboStage | 0;
+          const live = this.player.comboTimer > 0;
+          chain.innerText = live ? (stage >= 2 ? 'FINISHER' : '\u25cf'.repeat(stage + 1)) : '';
+          chain.className = 'text-[10px] font-black tracking-widest ' +
+            (stage >= 2 ? 'text-amber-300' : 'text-cyan-300');
+        }
         const hpPct = Math.max(0, (this.player.hp / this.player.maxHp) * 100);
         document.getElementById('hp-bar').style.width = `${hpPct}%`;
         document.getElementById('ui-hp-text').innerText = `${Math.ceil(this.player.hp)}`;

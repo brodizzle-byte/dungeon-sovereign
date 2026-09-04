@@ -23,7 +23,12 @@
   const DEBUG_STATE = !!root.JB_DEBUG_STATE;         // keep the raw state string per checkpoint
   const TRACE = root.JB_TRACE_TICKS || null;         // [from, to]: record every random() call site
   const MAX_STEPS_PER_FRAME = 4;    // a stalled tab slows the sim, never skips it
-  const VERSION = 1;
+  // Bumped whenever the engine's simulation changes shape. A payload
+  // recorded under a different number cannot be replayed by this one,
+  // and the bot refuses to judge it rather than calling it a cheat.
+  //   1  the author's v6.5 engine
+  //   2  v7: real knockback, telegraphed enemy attacks, the attack chain
+  const VERSION = 2;
 
   /* ───────────────────────── portable math ─────────────────────────
    * +,-,*,/ and sqrt are correctly rounded on every engine; sin/cos/

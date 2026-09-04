@@ -1,12 +1,15 @@
 <?php
 /**
- * 🏰 DUNGEON SOVEREIGN — a member-built game, served with the JuiceBox
- * bridge attached. game.html is the author's file VERBATIM (drop the next
- * version in and it just works); this page only:
+ * 🏰 DUNGEON SOVEREIGN — a member-built game we maintain from v7.0
+ * on, served with the JuiceBox bridge attached. This page only:
  *   1. checks who you are (signed jb_casino cookie / ?auth= link),
- *   2. applies two string patches at serve time (a victory-screen bug and a
- *      meta tag), and
+ *   2. rewrites the game's own Math.random( to JB.rng( and injects two meta
+ *      tags, and
  *   3. injects the bridge that makes runs deterministic + wired to sips.
+ * The RNG rewrite is the one patch that stays: it keeps third-party code on
+ * the page (Tailwind's runtime) off the seeded stream. Everything else goes
+ * IN game.html — replay/run.js loads that file straight off disk, so a fix
+ * applied only here would diverge every replay.
  * Sips move only in api.php; bounties are paid only by the bot after the
  * server replays the run (replay/run.js).
  */
@@ -40,12 +43,7 @@ if (!$practice && !dg_may_test($you)) {
 $html = @file_get_contents(__DIR__ . '/game.html');
 if ($html === false) { http_response_code(500); echo 'game.html missing'; exit; }
 
-// ── serve-time patches (never edit game.html by hand) ──
-$patched = 0;
-$needle = "document.getElementById('go-stat-score').innerText = score;\n        this.setState(STATES.GAME_OVER);";
-$fixed  = "document.getElementById('go-stat-score').innerText = this.runStats.score;\n        this.setState(STATES.GAME_OVER);";
-$html = str_replace($needle, $fixed, $html, $patched);
-if ($patched !== 1) error_log("dungeon: victory-score patch matched {$patched} times (new game version?)");
+// ── serve-time patch ──
 // Only the game draws from the seeded stream: its own Math.random( calls
 // become JB.rng( (the bridge dispatches seeded vs native). Third-party
 // code on the page (Tailwind's runtime!) keeps the real Math.random.
