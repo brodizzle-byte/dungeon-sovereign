@@ -187,11 +187,15 @@
       if (!net.reported && root.JB.run.ended) {
         net.reported = true;
         const me = game.players[game.mySeat];
+        // run.ended is the whole end-of-run record, not a word - sending it
+        // as the status put "[object Object]" in the match report.
+        const ended = root.JB.run.ended || {};
         send({
           op: 'done',
-          status: root.JB.run.ended,
+          status: ended.status || 'ENDED',
           placed: me ? me.placement : 0,
           kills: me ? (me.kills || 0) : 0,
+          score: ended.score | 0,
           tick: done,
         });
       }
