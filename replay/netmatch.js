@@ -16,6 +16,13 @@
  *
  * Needs a node with a WebSocket client built in (21+). The droplet runs 18
  * and only needs the SERVER half, which uses nothing but http and crypto.
+ *
+ * Against a LIVE relay (through TLS and nginx, with tickets minted on the
+ * box) rather than a spawned one:
+ *
+ *     GLAD_WS_URL=wss://juicebox.city/dgws \
+ *     GLAD_MATCH=<id> GLAD_TICKETS=<ticketA>,<ticketB> \
+ *       node replay/netmatch.js 600
  */
 const fs = require('fs');
 const os = require('os');
@@ -36,9 +43,15 @@ const SRC = fs.readFileSync(path.join(ROOT, 'game.html'), 'utf8');
 const BRIDGE = fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8');
 const NETJS = fs.readFileSync(path.join(ROOT, 'net.js'), 'utf8');
 
+// Live mode: aim at a relay that is already running, with tickets that
+// were minted where the real secret lives.
+const LIVE_URL = process.env.GLAD_WS_URL || '';
+const LIVE_TICKETS = (process.env.GLAD_TICKETS || '').split(',').filter(Boolean);
+const LIVE = !!(LIVE_URL && LIVE_TICKETS.length >= 2);
+
 const SECRET = 'netmatch-test-secret';
 const PORT = 8791 + (process.pid % 97);
-const MATCH = 'testmatch';
+const MATCH = process.env.GLAD_MATCH || 'testmatch';
 const SEED = 4242;
 const SEATS = [
   { uid: 'u_alice', name: 'alice', classId: 'knight', weaponId: 'iron_greatsword' },
@@ -53,13 +66,17 @@ function ticketFor(uid) {
   return `${body}.${sig}`;
 }
 
-function boot(uid) {
+function boot(uid, ticketOverride) {
   const html = SRC.split('Math.random(').join('JB.rng(');
   const win = makeWindow();
   win.JB_MODE = 'play';
   win.JB_CFG = { practice: true, prices: { entry: 20, refill: 10 } };
   win.WebSocket = WebSocket;
-  win.JB_NET = { url: `ws://127.0.0.1:${PORT}/dgws`, ticket: ticketFor(uid), match: MATCH };
+  win.JB_NET = {
+    url: LIVE ? LIVE_URL : `ws://127.0.0.1:${PORT}/dgws`,
+    ticket: ticketOverride || ticketFor(uid),
+    match: MATCH,
+  };
   const ctx = vm.createContext(win);
   gameScripts(html).forEach((s, i) => vm.runInContext(s, ctx, { filename: `game-${i}.js` }));
   win._fire('DOMContentLoaded');
@@ -105,35 +122,39 @@ async function until(fn, ms, what) {
 
 async function main() {
   const ticks = parseInt(process.argv[2] || '900', 10);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gladmatch-'));
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${MATCH}.json`), JSON.stringify({ seed: SEED, seats: SEATS }));
+  let dir = null, relay = null, relayOut = '';
 
-  const relay = spawn(process.execPath, [path.join(ROOT, 'server', 'gladiator.js')], {
-    env: { ...process.env, GLAD_PORT: String(PORT), GLAD_DATA: dir, GLAD_SECRET: SECRET },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let relayOut = '';
-  relay.stdout.on('data', d => { relayOut += d; });
-  relay.stderr.on('data', d => { relayOut += d; });
+  if (!LIVE) {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gladmatch-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${MATCH}.json`), JSON.stringify({ seed: SEED, seats: SEATS }));
+    relay = spawn(process.execPath, [path.join(ROOT, 'server', 'gladiator.js')], {
+      env: { ...process.env, GLAD_PORT: String(PORT), GLAD_DATA: dir, GLAD_SECRET: SECRET },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    relay.stdout.on('data', d => { relayOut += d; });
+    relay.stderr.on('data', d => { relayOut += d; });
+  }
 
   const done = code => {
-    try { relay.kill(); } catch (e) {}
-    if (code) console.log('\n--- relay log ---\n' + relayOut.trim());
+    try { if (relay) relay.kill(); } catch (e) {}
+    if (code && relayOut) console.log('\n--- relay log ---\n' + relayOut.trim());
     process.exit(code);
   };
 
   try {
-    await until(() => relayOut.includes('gladiator relay on'), 5000, 'the relay to listen');
+    if (LIVE) console.log(`live relay: ${LIVE_URL}, match ${MATCH}`);
+    else await until(() => relayOut.includes('gladiator relay on'), 5000, 'the relay to listen');
 
-    const A = boot('u_alice');
-    const B = boot('u_bob');
+    const A = boot('u_alice', LIVE ? LIVE_TICKETS[0] : null);
+    const B = boot('u_bob', LIVE ? LIVE_TICKETS[1] : null);
     await until(() => A.net.started && B.net.started, 8000, 'both seats to start');
 
     if (A.net.seat === B.net.seat) throw new Error(`both clients got seat ${A.net.seat}`);
     // Seat order comes from the roster file, not from who connected first.
     if (A.net.seat !== 0 || B.net.seat !== 1) throw new Error(`seats out of roster order: ${A.net.seat}, ${B.net.seat}`);
-    console.log(`relay up on ${PORT}; alice seat ${A.net.seat}, bob seat ${B.net.seat}, delay ${A.net.delay}`);
+    console.log(`${LIVE ? 'live' : 'local'} relay; seats ${A.net.seat} and ${B.net.seat}, `
+              + `input delay ${A.net.delay} ticks (${(A.net.delay * 16.7).toFixed(0)}ms)`);
 
     const h0 = stateOfAll(A.game);
     if (h0 !== stateOfAll(B.game)) throw new Error('the two arenas did not even start the same');
@@ -169,7 +190,7 @@ async function main() {
     if (simulated < 60) throw new Error(`the match barely moved: ${simulated} ticks`);
     console.log(`\nIN SYNC through the relay for ${simulated} ticks (${(simulated / 60).toFixed(1)}s)`);
     console.log(`alive: ${A.game.players.filter(p => !p.eliminated).length}/${SEATS.length}`);
-    console.log(`input log: ${fs.existsSync(path.join(dir, `${MATCH}.log`)) ? 'written' : 'MISSING'}`);
+    if (dir) console.log(`input log: ${fs.existsSync(path.join(dir, `${MATCH}.log`)) ? 'written' : 'MISSING'}`);
     done(0);
   } catch (e) {
     console.log('FAIL ' + (e.message || e));

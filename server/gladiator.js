@@ -489,7 +489,12 @@ server.on('upgrade', (req, socket) => {
     send(conn, { op: 'ping' });
   }, 3000);
 
+  // close and error both fire on a dropped socket, so without this the
+  // match gets told twice that somebody left.
+  let said = false;
   const bye = () => {
+    if (said) return;
+    said = true;
     clearInterval(ping);
     if (conn.match && conn.joined) dropConn(conn.match, conn);
   };
