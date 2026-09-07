@@ -358,7 +358,7 @@
       const p = g.players[i];
       if (!p || !p.pendingActions || !p.pendingActions.length) continue;
       g.player = p;
-      const inp = (i === g.mySeat) ? null : p.input;
+      const inp = p.input;          // solo has none and uses the live objects
       g.keys = inp ? inp.keys : sk;
       g.mousePos = inp ? inp.mousePos : sm;
       g.touchMovement = inp ? inp.touchMovement : st;
@@ -463,7 +463,11 @@
         // quantise the live state so browser and replay simulate identical numbers
         const full = e._full; delete e._full;
         applyInput(g, { k: full.k, m: full.m, t: full.t, f: full.f });
-        if (e.a) for (const a of e.a) applyAction(g, a);
+        // Online, an action reaches the sim ONLY through the relay's
+        // settled input. Anything still sitting here is a press net.js has
+        // already sent; applying it now would land it on this machine a
+        // few ticks early and nowhere else.
+        if (e.a && !netGate) for (const a of e.a) applyAction(g, a);
       } else if (e) {
         applyInput(g, e);
         if (e.a) for (const a of e.a) applyAction(g, a);
@@ -493,6 +497,14 @@
     this.lastTime = now;
     if (this.previewFlourishTimer > 0) this.previewFlourishTimer -= real;
     if (this.state === STATES.PLAYING) {
+      if (run.active && netGate) {
+        // Online: the match does not advance on wall-clock time, it advances
+        // when the relay has settled everybody's inputs for the next tick.
+        // net.js owns the stepping and calls tick() itself.
+        netGate(this, real);
+        if (this.loopRunning) requestAnimationFrame(() => this.loop());
+        return;
+      }
       if (run.active) {
         acc += real;
         let n = 0;
@@ -509,6 +521,13 @@
     }
     if (this.loopRunning) requestAnimationFrame(() => this.loop());
   };
+
+  /* ── hooks for an online match (net.js) ──
+   * takeActions drains the local action queue so net.js can DELAY those
+   * presses and route them through the relay, instead of the bridge
+   * applying them on the very next tick. In a lockstep match your own
+   * inputs travel exactly the same path as everybody else's. */
+  let netGate = null;
 
   /* ───────────────────────── replay driver ───────────────────────── */
   function replay(payload, opts) {
@@ -701,5 +720,15 @@
     mulberry32, fnv1a, rng,
     realSetTimeout, realClearTimeout,
     get inTick() { return inTick; },
+
+    /* ── online match hooks (net.js) ── */
+    // Take over the clock: an online match steps when the relay says so.
+    setGate(fn) { netGate = fn; },
+    // Drain the local action queue WITHOUT applying it. net.js delays these
+    // and sends them through the relay, so your own presses take exactly
+    // the same path as everybody else's - which is the only reason the
+    // machines stay identical.
+    takeActions() { return pending.splice(0); },
+    stateString(g) { return stateString(g); },
   };
 })();

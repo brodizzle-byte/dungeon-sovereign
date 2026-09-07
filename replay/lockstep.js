@@ -104,17 +104,11 @@ function drive(inst, tick) {
   for (let seat = 0; seat < game.players.length; seat++) {
     const p = game.players[seat];
     const inp = inputFor(seat, tick);
-    if (seat === game.mySeat) {
-      // The local seat is driven through the live objects, exactly as a
-      // keyboard would - a seat that reads its own copy goes stale.
-      game.keys = inp.keys;
-      game.mousePos = inp.mousePos;
-      game.touchMovement = inp.touchMovement;
-    } else {
-      p.input.keys = inp.keys;
-      p.input.mousePos = inp.mousePos;
-      p.input.touchMovement = inp.touchMovement;
-    }
+    // Delivered to every seat the way the relay delivers a settled tick,
+    // this machine's own included.
+    p.input.keys = inp.keys;
+    p.input.mousePos = inp.mousePos;
+    p.input.touchMovement = inp.touchMovement;
   }
   // Actions: the local seat goes through the bridge exactly as a real
   // keypress would; every other seat's arrive the way net.js delivers

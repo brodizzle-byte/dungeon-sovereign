@@ -2613,7 +2613,6 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
 
         this.mySeat = Math.max(0, Math.min(this.players.length - 1, cfg.mySeat | 0));
         this.player = this.players[this.mySeat];
-        this.player.input = null;      // the local seat reads the live objects
 
         this.totalArenaCompetitors = this.players.length;
         this.gladiatorsAlive = this.players.length;
@@ -3834,12 +3833,18 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           const p = this.players[i];
           if (!p || p.eliminated) continue;
           this.player = p;
-          // The LOCAL seat must read the live input objects, never a copy of
-          // them: bridge.js and the key handlers REPLACE this.keys with a new
-          // object rather than mutating it, so a stored alias goes stale on
-          // the first input and that seat silently stops moving.
-          // Remote seats carry their own input, delivered over the wire.
-          const inp = (i === this.mySeat) ? null : p.input;
+          // A seat with its own input object uses it; that is every seat in
+          // an online match, including this machine's own. Your keypresses
+          // reach your player the same way everyone else's reach theirs -
+          // sampled, sent, settled by the relay, handed back. The live
+          // objects stay purely the SAMPLING source, so a held key cannot
+          // be clobbered by its own delayed echo.
+          //
+          // Solo has no input object and reads the live ones directly. It
+          // must: bridge.js and the key handlers REPLACE this.keys with a
+          // new object rather than mutating it, so a stored alias goes
+          // stale on the first press and that player stops moving.
+          const inp = p.input;
           this.keys = inp ? inp.keys : sk;
           this.mousePos = inp ? inp.mousePos : sm;
           this.touchMovement = inp ? inp.touchMovement : st;
