@@ -444,5 +444,79 @@ check('the windup is drawn', () => {
   return 'a closing ring, red until it lands';
 });
 
+// ── nothing ends up inside a wall ──────────────────────────────────────
+/* A wall to roll at: a floor tile with solid rock immediately east of it. */
+function wallSpot(game) {
+  const T = 32;
+  for (let ty = 1; ty < 31; ty++) {
+    for (let tx = 1; tx < 30; tx++) {
+      if (game.dungeon.tiles[ty][tx] === 0 && game.dungeon.tiles[ty][tx + 1] === 1) {
+        return { x: tx * T + 16, y: ty * T + 16, wallX: (tx + 1) * T + 16 };
+      }
+    }
+  }
+  throw new Error('no floor tile with a wall to its east on this floor');
+}
+
+check('a dodge roll cannot end up inside a wall', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const spot = wallSpot(game);
+  const p = game.player;
+  p.x = spot.x; p.y = spot.y;
+  p.isDodging = true;
+  p.dodgeTimer = p.dodgeDuration;
+  p.dodgeAngle = 0;                       // due east, straight at the wall
+  for (let i = 0; i < 60; i++) JB.tick(game);
+  assert(!game.dungeon.isWall(p.x, p.y),
+    `rolled to (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) which is inside a wall`);
+  assert(p.x < spot.wallX, `rolled through to x=${p.x.toFixed(1)}, past the wall at ${spot.wallX}`);
+  return `stopped at x=${p.x.toFixed(1)}, wall begins ${spot.wallX}`;
+});
+
+check('a diagonal roll slides along a wall instead of sticking', () => {
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const spot = wallSpot(game);
+  const p = game.player;
+  p.x = spot.x; p.y = spot.y;
+  const y0 = p.y;
+  p.isDodging = true;
+  p.dodgeTimer = p.dodgeDuration;
+  p.dodgeAngle = Math.PI / 4;             // into the wall AND downward
+  for (let i = 0; i < 60; i++) JB.tick(game);
+  assert(!game.dungeon.isWall(p.x, p.y), 'ended up inside the wall');
+  assert(Math.abs(p.y - y0) > 1,
+    'blocked on x killed the y movement too - that is sticking, not sliding');
+  return `slid ${(p.y - y0).toFixed(1)}px along it`;
+});
+
+check('the 130px blink cannot cross a wall', () => {
+  const { game } = boot();
+  game.selectedClassId = 'assassin';
+  game.startStoryMode();
+  const spot = wallSpot(game);
+  const p = game.player;
+  p.x = spot.x; p.y = spot.y;
+  game.moveBlocked(p, 130, 0);            // four tiles, straight at the wall
+  assert(!game.dungeon.isWall(p.x, p.y), 'blinked inside a wall');
+  assert(p.x < spot.wallX, `blinked through to x=${p.x.toFixed(1)}, wall at ${spot.wallX}`);
+  return `stopped short at x=${p.x.toFixed(1)}`;
+});
+
+check('every position write goes through a collision-aware move', () => {
+  // The four bugs fixed here were all the same shape: a raw `+=` on x/y.
+  // This is the assertion that would have caught them on day one.
+  const raw = SRC.match(/this\.player\.[xy] \+=|enemy\.[xy] \+=/g) || [];
+  assert(raw.length === 0,
+    `${raw.length} raw position write(s) bypass moveBlocked/stepKnockback`);
+  assert(/moveBlocked\(e, dx, dy\)/.test(SRC), 'moveBlocked is gone');
+  return 'no raw += on any entity position';
+});
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

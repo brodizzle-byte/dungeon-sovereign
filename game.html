@@ -3373,8 +3373,11 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         } else if (this.player.classData.id === 'assassin') {
           SFX.dodge();
           const targetAngle = this.player.facingAngle;
-          this.player.x += Math.cos(targetAngle) * 130;
-          this.player.y += Math.sin(targetAngle) * 130;
+          // Stops at a wall rather than through it. A blink that lands you
+          // inside geometry is a soft-lock, and one that crosses a wall is
+          // a way out of every arena — so it is a dash, not a teleport.
+          this.moveBlocked(this.player, Math.cos(targetAngle) * 130,
+                                        Math.sin(targetAngle) * 130);
           this.triggerWeaponAnimation(targetAngle, Math.PI, 75, this.player.atk * 2.3 * dmgMultiplier, '#c084fc');
           this.addCombatLog('🗡️ Shadow Blink Backstab!', 'text-purple-400 font-bold');
         } else {
@@ -3552,6 +3555,36 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         e.ky *= drag;
         if (Math.abs(e.kx) < 1) e.kx = 0;
         if (Math.abs(e.ky) < 1) e.ky = 0;
+      }
+
+      // Move something by (dx, dy) without letting it end up inside a wall.
+      //
+      // Per-axis, so sliding along a wall works the way walking already
+      // does instead of stopping dead on a diagonal.
+      //
+      // Sub-stepped, because a single test at the destination is not a
+      // collision check: the assassin's 130px blink is four tiles, and
+      // testing only where it lands lets it pass straight through a
+      // one-tile wall whenever the far side happens to be floor. Steps are
+      // under half a tile and capped, so cost stays bounded.
+      moveBlocked(e, dx, dy) {
+        if (!this.dungeon) { e.x += dx; e.y += dy; return; }
+        const dist = Math.hypot(dx, dy);
+        if (!dist) return;
+        const steps = Math.min(16, Math.max(1, Math.ceil(dist / (TILE_SIZE * 0.4))));
+        const sx = dx / steps, sy = dy / steps;
+        let blockedX = false, blockedY = false;
+        for (let i = 0; i < steps; i++) {
+          if (!blockedX) {
+            const nx = e.x + sx;
+            if (this.dungeon.isWall(nx, e.y)) blockedX = true; else e.x = nx;
+          }
+          if (!blockedY) {
+            const ny = e.y + sy;
+            if (this.dungeon.isWall(e.x, ny)) blockedY = true; else e.y = ny;
+          }
+          if (blockedX && blockedY) break;
+        }
       }
 
       // Trauma, not a jitter. It accumulates, decays on its own clock, and
@@ -3830,8 +3863,10 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           const dSpeed = currentSpeed * 2.2;
           this.player.vx = Math.cos(this.player.dodgeAngle) * dSpeed;
           this.player.vy = Math.sin(this.player.dodgeAngle) * dSpeed;
-          this.player.x += this.player.vx * dt;
-          this.player.y += this.player.vy * dt;
+          // THE bug this all started with: the roll used to write straight
+          // to x/y with no wall test, so you rolled into geometry and the
+          // walking check then would not let you back out.
+          this.moveBlocked(this.player, this.player.vx * dt, this.player.vy * dt);
 
           // Trail particles during dodge roll
           if (Math.random() < 0.4) {
@@ -4352,8 +4387,8 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
                 enemy.chargeTimer = 2.8;
                 SFX.glitchBuzz();
                 const chargeAngle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
-                enemy.x += Math.cos(chargeAngle) * 80;
-                enemy.y += Math.sin(chargeAngle) * 80;
+                this.moveBlocked(enemy, Math.cos(chargeAngle) * 80,
+                                        Math.sin(chargeAngle) * 80);
               }
             }
           }
@@ -4558,8 +4593,8 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
                 }
                 if (target === this.player && distToTarget <= atkRange + 8) {
                   this.applyEnemyMeleeHit(enemy, dt, 2.2, true);
-                  this.player.x += Math.cos(enemy.chargeAngle) * 35;
-                  this.player.y += Math.sin(enemy.chargeAngle) * 35;
+                  this.moveBlocked(this.player, Math.cos(enemy.chargeAngle) * 35,
+                                                Math.sin(enemy.chargeAngle) * 35);
                 }
                 if (enemy.chargeDuration <= 0) enemy.isCharging = false;
               } else if (enemy.isTelegraphing) {

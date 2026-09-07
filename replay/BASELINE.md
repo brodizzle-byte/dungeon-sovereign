@@ -23,7 +23,20 @@ ticks instead of a handful of end-of-run totals — but their `status` and
 `score` come from the harness forcing an ending, so the comparison ignores
 those two fields and checks the hash instead.
 
-## Obsidian edition — current
+## Wall collision fix — current
+
+| seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
+|--------|-------|------|-------------------------------------------------|------|-----|------|----------|
+| 12345  | story | 6000 | FAILED floor 4, 21 kills, 1000 gold, 5150 pts   | 3239 | 463 | 2929 | —        |
+| 777    | story | 6000 | FAILED floor 4, 18 kills, 925 gold, 4550 pts    | 3240 | 445 | 2653 | —        |
+| 424242 | story | 6000 | FAILED floor 4, 23 kills, 1050 gold, 5550 pts   | 3690 | 522 | 2530 | —        |
+| 12345  | arena | 9000 | FAILED floor 1, 2 kills, 50 gold, 400 pts       | 4805 | 612 | 973  | —        |
+| 777    | arena | 9000 | tick cap, floor 1, 5 kills, 125 gold            | 9000 | 324 | 1138 | 3df98044 |
+
+Every scenario moved, and had to: four movement paths that used to write
+entities into geometry now stop at it, so the bot ends up somewhere else.
+
+## Obsidian edition
 
 Reproduces v7 step 6 **exactly, hash for hash**. The graphical overhaul
 (3x supersampled 1440 canvas, real torch falloff, retextured tiles, new
