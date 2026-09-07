@@ -48,7 +48,25 @@ if ($html === false) { http_response_code(500); echo 'game.html missing'; exit; 
 // become JB.rng( (the bridge dispatches seeded vs native). Third-party
 // code on the page (Tailwind's runtime!) keeps the real Math.random.
 // replay/run.js applies the identical rewrite.
-$html = str_replace('Math.random(', 'JB.rng(', $html, $rngPatched);
+// ...but ONLY inside the game's own <script>. Obsidian inlines Tailwind,
+// and that bundle carries three Math.random calls of its own. Rewriting
+// those would let a CSS framework pull from the run's seeded stream in the
+// browser, while replay/run.js - which loads only the simulation - never
+// draws them. The parity gate cannot catch that: both sides of the harness
+// skip Tailwind, so only a real player would ever diverge, and all they
+// would see is a bounty that never paid.
+// Same rule as gameScripts() in replay/dom.js - change both or drift.
+$rngPatched = 0;
+$html = preg_replace_callback(
+  '/(<script(?![^>]*\bsrc=)[^>]*>)([\s\S]*?)(<\/script>)/i',
+  function ($m) use (&$rngPatched) {
+    if (strpos($m[2], 'GameEngine') === false) return $m[0];   // not the simulation
+    $body = str_replace('Math.random(', 'JB.rng(', $m[2], $n);
+    $rngPatched += $n;
+    return $m[1] . $body . $m[3];
+  },
+  $html
+);
 if ($rngPatched < 10) error_log("dungeon: only {$rngPatched} Math.random calls rewritten (new game version?)");
 
 $cfg = [

@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const zlib = require('zlib');
-const { makeWindow } = require('./dom.js');
+const { makeWindow, gameScripts } = require('./dom.js');
 
 function out(obj) { process.stdout.write(JSON.stringify(obj) + '\n'); }
 
@@ -37,10 +37,7 @@ function main() {
   const here = __dirname;
   let html = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
   html = html.split('Math.random(').join('JB.rng(');   // same rewrite index.php serves
-  const scripts = [];
-  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) scripts.push(m[1]);
+  const scripts = gameScripts(html);
   if (!scripts.length) { out({ status: 'ERROR', error: 'no inline scripts in game.html' }); process.exit(2); }
 
   const win = makeWindow();

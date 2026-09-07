@@ -16,17 +16,14 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { makeWindow } = require('./dom.js');
+const { makeWindow, gameScripts } = require('./dom.js');
 
 const here = __dirname;
 const SRC = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
 
 function boot() {
   const html = SRC.split('Math.random(').join('JB.rng(');
-  const scripts = [];
-  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) scripts.push(m[1]);
+  const scripts = gameScripts(html);
   const win = makeWindow();
   win.JB_MODE = 'play';
   win.JB_CFG = { practice: true, prices: { entry: 20, refill: 10 } };
@@ -166,11 +163,19 @@ check('the light canvas resets its composite mode', () => {
 });
 
 check('render errors are not swallowed', () => {
-  const body = SRC.slice(SRC.indexOf('render(dt) {'), SRC.indexOf('renderMinimapRadar() {'));
+  const body = SRC.slice(SRC.indexOf('render(dt) {'), SRC.indexOf('buildTileLayer(dungeon) {'));
+  // The reset has to restore the renderer's BASE transform, not identity:
+  // Obsidian draws 3x supersampled (a 1440 backing store shown at 480), so
+  // resetting to 1:1 would leave everything a third size for the rest of
+  // the run. Take the base from where the canvas is configured so this
+  // keeps working the next time the resolution changes.
+  const base = SRC.match(/setTransform\(([^)]*)\)[\s\S]{0,80}?previewCanvas|canvas\.width\s*=[\s\S]{0,120}?setTransform\(([^)]*)\)/);
+  const want = ((base && (base[1] || base[2])) || '1, 0, 0, 1, 0, 0').trim();
   assert(!/catch \(e\) \{\}/.test(body), 'render still has an empty catch');
-  assert(/setTransform\(1, 0, 0, 1, 0, 0\)/.test(body), 'a render error leaves the transform stack unbalanced');
+  assert(body.includes('setTransform(' + want + ')'),
+    `a render error must reset the transform to the renderer's base (${want})`);
   assert(/console\.error/.test(body), 'a render error says nothing');
-  return 'logged, and the transform is reset';
+  return `logged, and the transform resets to ${want}`;
 });
 
 check('no raw enemy.speed movement reads', () =>
