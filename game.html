@@ -2602,6 +2602,12 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           const e = this.buildCombatant(L);
           e.seat = i;
           e.name = L.name || `Seat ${i + 1}`;
+          e.isSeat = true;
+          e.dead = false;          // the damage path checks this
+          e.eliminated = false;
+          e.kills = 0;
+          e.placement = 0;
+          e.hpFadeTimer = 0;
           // Placed by index, not by RNG: everyone agrees where everyone
           // starts without depending on the order the stream was drawn.
           const a = (i / Math.max(1, seats.length)) * Math.PI * 2;
@@ -2614,6 +2620,11 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.mySeat = Math.max(0, Math.min(this.players.length - 1, cfg.mySeat | 0));
         this.player = this.players[this.mySeat];
 
+        // Tuned for a lobby rather than for fifty: a handful of people in a
+        // 450-radius ring is mostly walking, so it starts tighter and
+        // squeezes sooner.
+        this.stormRadius = 380;
+        this.stormTimer = 20;
         this.totalArenaCompetitors = this.players.length;
         this.gladiatorsAlive = this.players.length;
         this.updateGladiatorsLeft();
@@ -3166,7 +3177,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
               this.projectiles.push({
                 x: this.player.x + nx, y: this.player.y + ny,
                 vx: Math.cos(angle) * projSpeed, vy: Math.sin(angle) * projSpeed,
-                radius: 7, damage: baseDmg * 0.75, fromPlayer: true,
+                radius: 7, damage: baseDmg * 0.75, fromPlayer: true, owner: this.player.seat,
                 type: 'orb', color: wpn.color || '#38bdf8', life: 1.2
               });
             }
@@ -3175,7 +3186,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
               this.projectiles.push({
                 x: this.player.x, y: this.player.y,
                 vx: Math.cos(angle + aOff) * projSpeed, vy: Math.sin(angle + aOff) * projSpeed,
-                radius: 7, damage: baseDmg * 0.65, fromPlayer: true,
+                radius: 7, damage: baseDmg * 0.65, fromPlayer: true, owner: this.player.seat,
                 type: 'orb', color: '#a855f7', life: 1.2
               });
             }
@@ -3187,7 +3198,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
               vy: Math.sin(angle) * projSpeed,
               radius: isFire ? 9 : 8,
               damage: baseDmg,
-              fromPlayer: true,
+              fromPlayer: true, owner: this.player.seat,
               type: isFire ? 'fireball' : 'orb',
               color: isFire ? '#f97316' : (wpn.color || '#00f0ff'),
               life: (wpn.traitId === 'hyper_velocity') ? 0.7 : 1.2,
@@ -3226,8 +3237,9 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           color
         });
 
-        for (let i = 0; i < this.enemies.length; i++) {
-          const enemy = this.enemies[i];
+        const targets = this.hostiles(this.player);
+        for (let i = 0; i < targets.length; i++) {
+          const enemy = targets[i];
           if (enemy.dead) continue;
 
           const dist = Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y);
@@ -3467,7 +3479,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
               vy: Math.sin(a) * 380,
               radius: 8,
               damage: this.player.atk * 1.5 * dmgMultiplier,
-              fromPlayer: true,
+              fromPlayer: true, owner: this.player.seat,
               color: '#a855f7',
               life: 1.0
             });
@@ -3748,8 +3760,40 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         }
       }
 
+      /* Everything `attacker` is allowed to hit. Monsters first, then the
+       * other seats in seat order, so all machines resolve the same hits
+       * in the same order. Solo returns the enemy array untouched. */
+      hostiles(attacker) {
+        if (!this.pvp) return this.enemies;
+        const out = this.enemies.slice();
+        for (let i = 0; i < this.players.length; i++) {
+          const p = this.players[i];
+          if (!p || p === attacker || p.eliminated) continue;
+          out.push(p);
+        }
+        return out;
+      }
+
       onEnemyKilled(enemy) {
         if (enemy.dead) return;
+
+        // A seat is a person, not a monster. They are eliminated - counted
+        // and announced identically everywhere - and the killer is
+        // credited. Never the arena path below, which calls triggerVictory
+        // on whichever client happened to process the blow.
+        if (enemy.isSeat) {
+          const killer = this.player;
+          if (killer && killer !== enemy) {
+            killer.kills = (killer.kills || 0) + 1;
+            if (killer === this.players[this.mySeat]) {
+              this.runStats.kills++;
+              this.runStats.gold += 25;
+            }
+          }
+          this.addArenaKillfeed((killer && killer.name) || 'Someone', enemy.name);
+          this.eliminateSeat(enemy, `slain by ${(killer && killer.name) || 'someone'}`);
+          return;
+        }
         enemy.dead = true;
         this.runStats.kills++;
         this.runStats.gold += enemy.boss ? 500 : 25;
@@ -3865,7 +3909,9 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
       eliminateSeat(p, cause) {
         if (!p || p.eliminated) return;
         p.eliminated = true;
+        p.dead = true;            // so the damage path stops targeting them
         p.hp = 0;
+        p.placement = this.gladiatorsAlive;   // last one out of N places Nth
         this.gladiatorsAlive = Math.max(0, this.gladiatorsAlive - 1);
         this.updateGladiatorsLeft();
         this.addCombatLog(`\u2620\ufe0f ${p.name || 'A gladiator'} — ${cause || 'liquidated'}`, 'text-rose-400');
@@ -3877,6 +3923,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         // The match, not the player, decides when the run is over.
         if (this.gladiatorsAlive <= 1) {
           const last = this.players.find(q => q && !q.eliminated);
+          if (last) last.placement = 1;
           if (last) this.addCombatLog(`\ud83c\udfc6 ${last.name || 'Someone'} takes the night`, 'text-amber-300 font-bold');
           if (last === this.player) this.triggerVictory(); else this.triggerGameOver();
         }
@@ -4097,8 +4144,9 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           if (p.fromPlayer && p.isHoming) {
             let nearestDist = 280;
             let targetE = null;
-            for (let j = 0; j < this.enemies.length; j++) {
-              const e = this.enemies[j];
+            const homingTargets = this.hostiles(this.players[p.owner]);
+            for (let j = 0; j < homingTargets.length; j++) {
+              const e = homingTargets[j];
               if (e.dead) continue;
               const d = Math.hypot(e.x - p.x, e.y - p.y);
               if (d < nearestDist) {
@@ -4122,11 +4170,17 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           p.life -= dt;
 
           if (p.fromPlayer) {
-            for (let j = 0; j < this.enemies.length; j++) {
-              const enemy = this.enemies[j];
+            // Whoever fired it cannot be hit by it, and the shot credits
+            // them rather than whichever seat happens to be current.
+            const shotTargets = this.hostiles(this.players[p.owner]);
+            for (let j = 0; j < shotTargets.length; j++) {
+              const enemy = shotTargets[j];
               if (enemy.dead) continue;
 
               if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= enemy.radius + p.radius) {
+                const shooter = this.players[p.owner] || this.player;
+                const wasSeat = this.player;
+                this.player = shooter;      // so a kill credits who fired
                 let dmg = Math.max(1, Math.round(p.damage - enemy.def * 0.3));
                 enemy.hp -= dmg;
                 enemy.hpFadeTimer = 3.0;
@@ -4136,6 +4190,8 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
                 triggerHaptic('hit');
                 this.addTrauma(0.4, Math.atan2(p.vy, p.vx));
                 this.spawnFloatingText(enemy.x, enemy.y, `${dmg}`, '#ffffff', 14);
+
+                this.player = wasSeat;
 
                 // Rich Blood Burst & Decals
                 this.spawnBloodBurst(enemy, Math.atan2(p.vy, p.vx), false);
@@ -4916,7 +4972,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         if (this.gameMode === 'arena') {
           this.stormTimer -= dt;
           if (this.stormTimer <= 0) {
-            this.stormTimer = 25;
+            this.stormTimer = this.pvp ? 20 : 25;
             this.stormRadius = Math.max(85, this.stormRadius - 100);
             this.addCombatLog('⚠️ STORM CONTRACTED! Liquidation radius shrunk!', 'text-purple-400 font-bold');
             SFX.glitchBuzz();

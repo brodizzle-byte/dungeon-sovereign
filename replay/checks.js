@@ -561,5 +561,102 @@ check('there is only one implementation of moving a combatant', () => {
   return 'one movement path, walked once per seat';
 });
 
+// -- an arena with people in it ---------------------------------------
+function bootMatch(seats) {
+  const h = boot();
+  h.JB.run.granted = { seed: 99, id: 'checks-pvp', refills_left: 0 };
+  h.game.startPvpMatch({
+    seed: 99,
+    mySeat: 0,
+    seats: seats || [
+      { name: 'alice', classId: 'knight', weaponId: 'iron_greatsword' },
+      { name: 'bob', classId: 'knight', weaponId: 'iron_greatsword' },
+    ],
+  });
+  return h;
+}
+
+/* Stand two seats on top of each other, facing, out of the storm. */
+function faceOff(game) {
+  const [a, b] = game.players;
+  a.x = 512; a.y = 512;
+  b.x = 512 + 24; b.y = 512;
+  a.facingAngle = 0;
+  a.facing = { x: 1, y: 0 };
+  game.mousePos = { x: 400, y: 240 };
+  game.spawnGraceTimer = 0;
+  a.stamina = a.maxStamina;
+  a.attackCd = 0;
+  return [a, b];
+}
+
+check('a match seats everyone and points this.player at me', () => {
+  const { game } = bootMatch();
+  assert(game.players.length === 2, `${game.players.length} seats`);
+  assert(game.player === game.players[0], 'this.player is not my seat');
+  assert(game.players[1].input, 'a remote seat has no input to be driven by');
+  assert(game.players[0].input, 'my own seat must be driven by settled input too');
+  assert(game.enemies.length === 0, `${game.enemies.length} bots in a no-bots match`);
+  return `${game.players.length} seats, no bots`;
+});
+
+check('one player can hit another', () => {
+  const { JB, game } = bootMatch();
+  const [a, b] = faceOff(game);
+  const hp0 = b.hp;
+  game.playerAttack();
+  JB.tick(game);
+  assert(b.hp < hp0, `bob took no damage (still ${b.hp})`);
+  return `bob ${hp0} -> ${b.hp.toFixed(1)}`;
+});
+
+check('you cannot hit yourself', () => {
+  const { JB, game } = bootMatch();
+  const [a, b] = faceOff(game);
+  b.x = -9999;                       // bob far away; only alice is in reach
+  const hp0 = a.hp;
+  game.playerAttack();
+  JB.tick(game);
+  assert(a.hp === hp0, `alice hit herself for ${(hp0 - a.hp).toFixed(1)}`);
+  return 'the attacker is never in their own hostile list';
+});
+
+check('killing a seat eliminates them and credits the killer', () => {
+  const { JB, game } = bootMatch();
+  const [a, b] = faceOff(game);
+  b.hp = 1;
+  const alive0 = game.gladiatorsAlive;
+  game.playerAttack();
+  JB.tick(game);
+  assert(b.eliminated, 'bob survived a lethal blow');
+  assert(b.dead, 'an eliminated seat must read as dead to the damage path');
+  assert(a.kills === 1, `killer credited ${a.kills} kills`);
+  assert(game.gladiatorsAlive === alive0 - 1,
+    `alive count ${game.gladiatorsAlive}, expected ${alive0 - 1}`);
+  assert(b.placement === 2, `bob placed ${b.placement}, expected 2 of 2`);
+  return `bob out, placed ${b.placement}, alice credited ${a.kills}`;
+});
+
+check('an eliminated seat stops being simulated', () => {
+  const { JB, game } = bootMatch([
+    { name: 'a', classId: 'knight' }, { name: 'b', classId: 'knight' }, { name: 'c', classId: 'knight' },
+  ]);
+  const b = game.players[1];
+  b.x = 512; b.y = 512;
+  game.eliminateSeat(b, 'test');
+  const x0 = b.x;
+  b.input.keys = { d: true };
+  for (let i = 0; i < 30; i++) JB.tick(game);
+  assert(b.x === x0, `an eliminated seat moved ${(b.x - x0).toFixed(1)}px`);
+  return 'out means out';
+});
+
+check('the storm is tuned for a lobby, not for fifty', () => {
+  const { game } = bootMatch();
+  assert(game.stormRadius === 380, `storm starts at ${game.stormRadius}`);
+  assert(game.stormTimer === 20, `first squeeze in ${game.stormTimer}s`);
+  return `${game.stormRadius} radius, ${game.stormTimer}s a squeeze`;
+});
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);
