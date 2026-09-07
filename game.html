@@ -1862,7 +1862,10 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.dungeon = null;
         this.cam = { x: 0, y: 0 };
 
-        this.player = null;
+        this.player = null;      // -> players[mySeat]; see updateAllPlayers
+        this.players = [];       // every combatant, in a fixed shared order
+        this.mySeat = 0;         // which one this machine is looking through
+        this.net = null;         // set by net.js in an online match
         this.enemies = [];
         this.pendingEnemies = [];
         this.projectiles = [];
@@ -2664,6 +2667,13 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             { name: 'Custom Sovereign Dye', sprite: cls.sprite, type: 'outfit' }
           ]
         };
+        // Seat 0, and this.player points at it. An online match seats more
+        // people; it never introduces a second way to be a combatant.
+        this.player.seat = 0;
+        this.player.input = null;   // the local seat reads the LIVE objects
+        this.players = [this.player];
+        this.mySeat = 0;
+
         document.getElementById('ui-skill-name').innerText = cls.skillName;
       }
 
@@ -3738,16 +3748,45 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         }
       }
 
-      update(dt) {
-        if (!this.player) return;
-
-        if (this.spawnGraceTimer > 0) {
-          this.spawnGraceTimer -= dt;
-          document.getElementById('grace-period-banner').style.display = 'block';
-        } else {
-          document.getElementById('grace-period-banner').style.display = 'none';
+      /* ─────────────────────────── seats ───────────────────────────
+       * Every combatant is simulated by updateOnePlayer and nothing else.
+       * `this.player` is a POINTER at the seat currently being updated, so
+       * the ~130 references inside that method - and the ~330 elsewhere in
+       * this file - keep meaning "the one we are updating" unchanged.
+       *
+       * That single shared code path is what makes an online match agree
+       * bit-for-bit on every machine. A separate branch for remote players
+       * would be a second implementation of movement and combat, and the
+       * two would drift within seconds.
+       *
+       * Solo is simply the one-seat case, and behaves identically. */
+      updateAllPlayers(dt) {
+        const sp = this.player, sk = this.keys, sm = this.mousePos, st = this.touchMovement;
+        let live = true;
+        for (let i = 0; i < this.players.length; i++) {
+          const p = this.players[i];
+          if (!p) continue;
+          this.player = p;
+          // The LOCAL seat must read the live input objects, never a copy of
+          // them: bridge.js and the key handlers REPLACE this.keys with a new
+          // object rather than mutating it, so a stored alias goes stale on
+          // the first input and that seat silently stops moving.
+          // Remote seats carry their own input, delivered over the wire.
+          const inp = (i === this.mySeat) ? null : p.input;
+          this.keys = inp ? inp.keys : sk;
+          this.mousePos = inp ? inp.mousePos : sm;
+          this.touchMovement = inp ? inp.touchMovement : st;
+          if (this.updateOnePlayer(dt) === false) { live = false; break; }
         }
+        // Whatever happened above, this machine goes back to looking
+        // through its own eyes: the camera, the HUD and render() all read
+        // this.player and must never see somebody else's seat.
+        this.player = sp; this.keys = sk; this.mousePos = sm; this.touchMovement = st;
+        return live;
+      }
 
+      // Returns false if this seat ended the run this tick.
+      updateOnePlayer(dt) {
         // Synchronize player facing if moving
         if (Math.hypot(this.player.vx, this.player.vy) > 10) {
           const mLen = Math.hypot(this.player.vx, this.player.vy);
@@ -3782,7 +3821,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             if (this.player.hp <= 0) {
               this.runStats.causeOfDeath = 'Diabetic Rage Metabolic Burn';
               this.triggerGameOver();
-              return;
+              return false;   // the run ended - stop the whole tick
             }
           } else if (this.player.sugarLevel >= 50) {
             this.player.auraState = 'SWEET_SPOT';
@@ -3919,6 +3958,21 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             }
           }
         }
+
+        return true;
+      }
+
+      update(dt) {
+        if (!this.player) return;
+
+        if (this.spawnGraceTimer > 0) {
+          this.spawnGraceTimer -= dt;
+          document.getElementById('grace-period-banner').style.display = 'block';
+        } else {
+          document.getElementById('grace-period-banner').style.display = 'none';
+        }
+
+        if (this.updateAllPlayers(dt) === false) return;
 
         // Story Portal Exit Trigger (Floor 10 Win Condition)
         if (this.gameMode === 'story' && !this.activeBoss && !this.isTransitioningFloor) {

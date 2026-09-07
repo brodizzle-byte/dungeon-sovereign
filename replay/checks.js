@@ -518,5 +518,48 @@ check('every position write goes through a collision-aware move', () => {
   return 'no raw += on any entity position';
 });
 
+// -- seats: one code path for every combatant -------------------------
+check('solo is the one-seat case', () => {
+  const { game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  assert(game.players.length === 1, `${game.players.length} seats in a solo run`);
+  assert(game.player === game.players[game.mySeat],
+    'this.player is not the seat it points at - camera and HUD would read the wrong person');
+  return '1 seat, this.player === players[mySeat]';
+});
+
+check('the local seat reads live input, not a stale alias', () => {
+  // The bug this check exists for: bridge.js and the key handlers REPLACE
+  // this.keys with a brand new object instead of mutating it. A seat that
+  // cached its own reference kept reading the original empty one, and that
+  // player silently stopped moving for the rest of the run.
+  const { JB, game } = boot();
+  game.selectedClassId = 'knight';
+  game.selectedWeaponId = 'iron_greatsword';
+  game.startStoryMode();
+  const p = game.player;
+  const x0 = p.x;
+  game.keys = { d: true };                 // a NEW object, as the real code does
+  for (let i = 0; i < 30; i++) JB.tick(game);
+  assert(p.x > x0 + 5,
+    `moved only ${(p.x - x0).toFixed(1)}px after keys was replaced - stale input alias`);
+  return `moved ${(p.x - x0).toFixed(1)}px on a replaced keys object`;
+});
+
+check('there is only one implementation of moving a combatant', () => {
+  // An online match stays in sync only because every seat runs the SAME
+  // code. The failure mode is somebody adding a second branch for remote
+  // players; two implementations of movement drift within seconds.
+  const starts = SRC.match(/this\.player\.vx = 0;/g) || [];
+  assert(starts.length === 1,
+    `${starts.length} places reset player velocity - there should be exactly one`);
+  assert(/updateAllPlayers\(dt\) === false/.test(SRC),
+    'update() no longer delegates to the seat loop');
+  assert(/updateOnePlayer\(dt\) {/.test(SRC), 'updateOnePlayer is gone');
+  return 'one movement path, walked once per seat';
+});
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);
