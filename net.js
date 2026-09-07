@@ -38,6 +38,7 @@
     recent: [],                   // [tick, packet] we still repeat
     started: false,
     over: false,
+    reported: false,
     status: 'connecting',
   };
   root.JBNet = net;
@@ -149,6 +150,20 @@
       // rate, so a fast machine cannot flood the relay.
       if (mine) pushInput(net.tick + net.delay, mine);
       if (done % HASH_EVERY === 0) reportHash(game, done);
+
+      // The run ends when the MATCH does - the last seat standing, or this
+      // one being eliminated after everybody else. Report once.
+      if (!net.reported && root.JB.run.ended) {
+        net.reported = true;
+        const me = game.players[game.mySeat];
+        send({
+          op: 'done',
+          status: root.JB.run.ended,
+          placed: me ? me.placement : 0,
+          kills: me ? (me.kills || 0) : 0,
+          tick: done,
+        });
+      }
       if (ran > 8) break;                 // catching up, but not in one frame
     }
     if (!ran) game.render(real);           // waiting on somebody

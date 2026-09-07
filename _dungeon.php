@@ -30,6 +30,43 @@ const DUNGEON_MAX_JSON_BYTES  = 24 * 1024 * 1024;  // decompressed cap
 define('DUNGEON_DATA', __DIR__ . '/data');
 define('DUNGEON_RUNS', DUNGEON_DATA . '/runs');
 define('DUNGEON_MEMBERS', DUNGEON_DATA . '/members');
+define('DUNGEON_MATCHES', DUNGEON_DATA . '/matches');
+// The relay checks a ticket this file mints. Shared with server/gladiator.js
+// through a file on disk that is never in git.
+define('DUNGEON_WS_SECRET', DUNGEON_DATA . '/gladiator.secret');
+define('DUNGEON_WS_URL', getenv('DUNGEON_WS_URL') ?: 'wss://juicebox.city/dgws');
+
+/* A short-lived, signed "you are this person, in this match" token.
+ * The relay never sees a Discord login: this is the only thing that says
+ * who somebody is, so it is minted here, where casino_auth() already
+ * decided, and it is valid for one match and fifteen minutes. */
+function dg_match_ticket($you, $matchId) {
+  $secret = @file_get_contents(DUNGEON_WS_SECRET);
+  if ($secret === false) return null;
+  $secret = trim($secret);
+  if ($secret === '') return null;
+  $b = function ($raw) { return rtrim(strtr(base64_encode($raw), '+/', '-_'), '='); };
+  $body = $b(json_encode(['m' => $matchId, 'u' => (string)$you, 'e' => time() + 900]));
+  return $body . '.' . $b(hash_hmac('sha256', $body, $secret, true));
+}
+
+/* The match definition the bot wrote, or null. Seat order lives in this
+ * file and nowhere else - every client must build the same array in the
+ * same order or seat numbers mean different people on different machines. */
+function dg_match($matchId) {
+  if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', (string)$matchId)) return null;
+  $j = @file_get_contents(DUNGEON_MATCHES . '/' . $matchId . '.json');
+  if ($j === false) return null;
+  $d = json_decode($j, true);
+  return is_array($d) ? $d : null;
+}
+
+function dg_match_seat($def, $you) {
+  foreach (($def['seats'] ?? []) as $i => $s) {
+    if ((string)($s['uid'] ?? '') === (string)$you) return $i;
+  }
+  return -1;
+}
 
 function dg_ensure_dirs() {
   foreach ([DUNGEON_DATA, DUNGEON_RUNS, DUNGEON_MEMBERS] as $d) if (!is_dir($d)) @mkdir($d, 0775, true);

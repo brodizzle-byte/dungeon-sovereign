@@ -1,0 +1,30 @@
+[Unit]
+Description=Gladiator Nights lockstep relay (Dungeon Sovereign PvP)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/juicebox/dungeon
+ExecStart=/usr/bin/node /var/www/juicebox/dungeon/server/gladiator.js
+Environment=GLAD_HOST=127.0.0.1
+Environment=GLAD_PORT=8787
+Environment=GLAD_DATA=/var/www/juicebox/dungeon/data/matches
+Environment=GLAD_SECRET_FILE=/var/www/juicebox/dungeon/data/gladiator.secret
+Restart=always
+RestartSec=3
+
+# It only ever needs to read the roster it was given and append an input
+# log beside it. Nothing else on the box is its business.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/juicebox/dungeon/data/matches
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -89,9 +89,28 @@ $debug = (!empty($_GET['debug']) && (dg_may_test($you) || $practice))
        ? "window.JB_CHECK_EVERY = " . max(1, (int)$_GET['debug']) . "; window.JB_DEBUG_STATE = 1; " : "";
 if ($debug && !empty($_GET['trace']) && preg_match('/^(\d+)-(\d+)$/', $_GET['trace'], $tm))
   $debug .= "window.JB_TRACE_TICKS = [{$tm[1]}, {$tm[2]}]; ";
+// -- an online match --
+// Only ever for somebody the bot already seated. net.js is not served at
+// all otherwise, so a solo run cannot accidentally load the netcode, and
+// the ticket is the only thing that tells the relay who you are.
+$netTail = '';
+$matchId = (string)($_GET['match'] ?? '');
+if ($matchId !== '') {
+  $def    = dg_match($matchId);
+  $seat   = $def ? dg_match_seat($def, $you) : -1;
+  $ticket = ($seat >= 0) ? dg_match_ticket($you, $matchId) : null;
+  if ($ticket) {
+    $netCfg  = ['url' => DUNGEON_WS_URL, 'ticket' => $ticket, 'match' => $matchId];
+    $netTail = "<script>window.JB_NET = " . json_encode($netCfg) . ";</script>\n"
+             . "<script src=\"net.js?v=" . filemtime(__DIR__ . '/net.js') . "\"></script>\n";
+  } else {
+    error_log("dungeon: {$you} asked for match {$matchId} but is not seated in it");
+  }
+}
+
 $tail = "\n<script>{$debug}window.JB_CFG = " . json_encode($cfg, JSON_UNESCAPED_UNICODE) . ";</script>\n"
       . "<script src=\"bridge.js?v=" . filemtime(__DIR__ . '/bridge.js') . "\"></script>\n"
-      . "<script src=\"controls.js?v=" . filemtime(__DIR__ . '/controls.js') . "\"></script>\n</body>";
+      . "<script src=\"controls.js?v=" . filemtime(__DIR__ . '/controls.js') . "\"></script>\n" . $netTail . "</body>";
 $html = preg_replace('/<\/body>/i', $tail, $html, 1);
 
 header('Content-Type: text/html; charset=UTF-8');

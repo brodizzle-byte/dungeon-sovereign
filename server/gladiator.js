@@ -180,6 +180,7 @@ function loadMatch(id) {
     settled: new Map(),        // tick -> the authoritative set, once decided
     last: new Map(),           // seat -> last packet seen (what a straggler repeats)
     hashes: new Map(),         // tick -> { seat: hash }
+    results: new Map(),        // seat -> how it ended, for the bot to announce
     started: false,
     over: false,
     cursor: 0,                 // lowest tick not yet settled
@@ -318,6 +319,20 @@ function endMatch(m, why) {
   m.over = true;
   if (m.timer) clearInterval(m.timer);
   if (m.logStream) m.logStream.end();
+
+  // What the bot announces. Placements are what the clients reported, and
+  // they all simulated the same arena - the full input log sits beside
+  // this file, so a disputed result can be re-simulated rather than argued
+  // about.
+  const placings = Array.from(m.results.values()).sort((a, b) => a.placed - b.placed);
+  try {
+    fs.writeFileSync(path.join(DATA, `${m.id}.result.json`), JSON.stringify({
+      id: m.id, seed: m.seed, why,
+      at: Math.floor(Date.now() / 1000),
+      seats: m.roster.map(r => ({ seat: r.seat, uid: r.uid, name: r.name })),
+      placings,
+    }, null, 2));
+  } catch (e) { log(`match ${m.id}: cannot write result`, e.message); }
   broadcast(m, { op: 'over', why });
   log(`match ${m.id}: over (${why})`);
   setTimeout(() => matches.delete(m.id), 30000);
@@ -365,6 +380,13 @@ function onMessage(conn, text) {
   if (msg.op === 'done') {
     if (!m) return;
     conn.done = true;
+    m.results.set(conn.seat, {
+      seat: conn.seat, uid: conn.uid, name: conn.name,
+      status: String(msg.status || '?').slice(0, 24),
+      placed: msg.placed | 0,
+      kills: msg.kills | 0,
+      tick: msg.tick | 0,
+    });
     log(`match ${m.id}: seat ${conn.seat} finished (${msg.status || '?'}, placed ${msg.placed || '?'})`);
     let all = true;
     for (const c of m.conns.values()) if (!c.done) all = false;
