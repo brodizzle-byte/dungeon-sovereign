@@ -337,7 +337,39 @@
       pending.push(ACTION[name]);
     };
   });
+  // Queue on the acting seat; applySeatActions drains them in seat order.
+  // Solo (one seat) keeps the original immediate path, so nothing about a
+  // bounty run changes.
   function applyAction(g, code) {
+    if (g.players && g.players.length > 1 && g.player) {
+      (g.player.pendingActions || (g.player.pendingActions = [])).push(code);
+      return;
+    }
+    rawAction(g, code);
+  }
+
+  /* Every seat's queued actions, applied in SEAT order on every machine.
+   * The order is the whole point: an attack resolves damage as it is
+   * applied, so two clients that disagree about who swung first have
+   * already desynced by the end of the tick. */
+  function applySeatActions(g) {
+    const sp = g.player, sk = g.keys, sm = g.mousePos, st = g.touchMovement;
+    for (let i = 0; i < g.players.length; i++) {
+      const p = g.players[i];
+      if (!p || !p.pendingActions || !p.pendingActions.length) continue;
+      g.player = p;
+      const inp = (i === g.mySeat) ? null : p.input;
+      g.keys = inp ? inp.keys : sk;
+      g.mousePos = inp ? inp.mousePos : sm;
+      g.touchMovement = inp ? inp.touchMovement : st;
+      const q = p.pendingActions;
+      p.pendingActions = [];
+      for (let j = 0; j < q.length; j++) rawAction(g, q[j]);
+    }
+    g.player = sp; g.keys = sk; g.mousePos = sm; g.touchMovement = st;
+  }
+
+  function rawAction(g, code) {
     switch (code) {
       case 'a': O.playerAttack.call(g); break;
       case 's': O.playerSkill.call(g); break;
@@ -436,6 +468,9 @@
         applyInput(g, e);
         if (e.a) for (const a of e.a) applyAction(g, a);
       }
+      // Online: the local queue above and every remote seat's queue (filled
+      // by net.js before this tick) are drained together, in seat order.
+      if (g.players && g.players.length > 1) applySeatActions(g);
       const F = g.player && g.player.facing;
       last.f = F ? [F.x, F.y] : null;
       g.animTime += DT;

@@ -2579,6 +2579,49 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.addCombatLog('⚔️ 50-GLADIATOR BATTLE ROYALE COMMENCED!', 'text-amber-400 font-bold');
       }
 
+      /* An arena seated with people. Deliberately gameMode 'arena': the
+       * storm, the HUD, the alive counter and the "#N Placed" result are
+       * already built and already tuned, and reusing them means online and
+       * solo cannot drift apart in the parts they share.
+       *
+       *   cfg = { seed, mySeat, seats: [{ name, classId, weaponId, ... }] }
+       */
+      startPvpMatch(cfg) {
+        this.startArenaBattleRoyale();
+
+        // No bots, and nothing queued to drop in later.
+        this.enemies = [];
+        this.pendingEnemies = [];
+        this.spawnBeacons = [];
+        this.queuedGladiators = 0;
+
+        const seats = cfg.seats || [];
+        this.pvp = { seed: cfg.seed, names: seats.map(x => x.name || '?') };
+        this.spectating = false;
+        this.players = seats.map((L, i) => {
+          const e = this.buildCombatant(L);
+          e.seat = i;
+          e.name = L.name || `Seat ${i + 1}`;
+          // Placed by index, not by RNG: everyone agrees where everyone
+          // starts without depending on the order the stream was drawn.
+          const a = (i / Math.max(1, seats.length)) * Math.PI * 2;
+          e.x = 512 + Math.cos(a) * 300;
+          e.y = 512 + Math.sin(a) * 300;
+          e.input = { keys: {}, mousePos: { x: 240, y: 240 }, touchMovement: { active: false, x: 0, y: 0 } };
+          return e;
+        });
+
+        this.mySeat = Math.max(0, Math.min(this.players.length - 1, cfg.mySeat | 0));
+        this.player = this.players[this.mySeat];
+        this.player.input = null;      // the local seat reads the live objects
+
+        this.totalArenaCompetitors = this.players.length;
+        this.gladiatorsAlive = this.players.length;
+        this.updateGladiatorsLeft();
+        this.updateHUD();
+        this.addCombatLog(`\u2694\ufe0f ${this.players.length}-PLAYER GLADIATOR NIGHT`, 'text-amber-400 font-bold');
+      }
+
       spawnReinforcementGladiator() {
         if (this.queuedGladiators <= 0) return;
         this.queuedGladiators--;
@@ -2675,6 +2718,30 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.mySeat = 0;
 
         document.getElementById('ui-skill-name').innerText = cls.skillName;
+      }
+
+      // Build a combatant from an arbitrary loadout, through the SAME
+      // constructor the local player goes through. A second construction
+      // path would be a second set of stats, and two of those drift.
+      // initPlayer reads this.selected*, so they are lent to it and put
+      // back - including this.player itself, which it overwrites.
+      buildCombatant(L) {
+        const save = [this.selectedClassId, this.selectedWeaponId, this.selectedSkinId,
+                      this.selectedPerk, this.selectedAccessory, this.selectedCapeStyle,
+                      this.customColors, this.player, this.players, this.mySeat];
+        this.selectedClassId = L.classId;
+        this.selectedWeaponId = L.weaponId;
+        this.selectedSkinId = L.skinId;
+        this.selectedPerk = L.perk || null;
+        this.selectedAccessory = L.accessory || 'crown';
+        this.selectedCapeStyle = L.capeStyle || 'grand';
+        if (L.colors) this.customColors = L.colors;
+        this.initPlayer();
+        const e = this.player;
+        [this.selectedClassId, this.selectedWeaponId, this.selectedSkinId,
+         this.selectedPerk, this.selectedAccessory, this.selectedCapeStyle,
+         this.customColors, this.player, this.players, this.mySeat] = save;
+        return e;
       }
 
       /* ================= BALANCED FLOOR-TIERED ENEMY FACTORY ================= */
@@ -3765,7 +3832,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         let live = true;
         for (let i = 0; i < this.players.length; i++) {
           const p = this.players[i];
-          if (!p) continue;
+          if (!p || p.eliminated) continue;
           this.player = p;
           // The LOCAL seat must read the live input objects, never a copy of
           // them: bridge.js and the key handlers REPLACE this.keys with a new
@@ -3783,6 +3850,31 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         // this.player and must never see somebody else's seat.
         this.player = sp; this.keys = sk; this.mousePos = sm; this.touchMovement = st;
         return live;
+      }
+
+      /* A seat is out. Every machine runs this for every seat at the same
+       * tick, so the alive count and the ordering stay identical; only the
+       * local player's own screen is allowed to react differently.
+       * Never call triggerGameOver for somebody else's death - that ends
+       * THIS client's run and cuts its tick short, which is a desync. */
+      eliminateSeat(p, cause) {
+        if (!p || p.eliminated) return;
+        p.eliminated = true;
+        p.hp = 0;
+        this.gladiatorsAlive = Math.max(0, this.gladiatorsAlive - 1);
+        this.updateGladiatorsLeft();
+        this.addCombatLog(`\u2620\ufe0f ${p.name || 'A gladiator'} — ${cause || 'liquidated'}`, 'text-rose-400');
+
+        if (p === this.player) {
+          this.runStats.causeOfDeath = cause || 'Liquidated';
+          this.spectating = true;      // camera moves on; the match continues
+        }
+        // The match, not the player, decides when the run is over.
+        if (this.gladiatorsAlive <= 1) {
+          const last = this.players.find(q => q && !q.eliminated);
+          if (last) this.addCombatLog(`\ud83c\udfc6 ${last.name || 'Someone'} takes the night`, 'text-amber-300 font-bold');
+          if (last === this.player) this.triggerVictory(); else this.triggerGameOver();
+        }
       }
 
       // Returns false if this seat ended the run this tick.
@@ -3817,6 +3909,10 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             this.player.hp -= burnDmg;
             if (Math.random() < 0.08) {
               this.spawnFloatingText(this.player.x, this.player.y, '-3 BURN', '#fb923c', 12);
+            }
+            if (this.player.hp <= 0 && this.pvp) {
+              this.eliminateSeat(this.player, 'Diabetic Rage Metabolic Burn');
+              return true;              // the tick carries on for everyone else
             }
             if (this.player.hp <= 0) {
               this.runStats.causeOfDeath = 'Diabetic Rage Metabolic Burn';
@@ -4822,18 +4918,30 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           }
           document.getElementById('storm-timer-text').innerText = `${Math.ceil(this.stormTimer)}s`;
 
-          const distToCenter = Math.hypot(this.player.x - this.stormCenter.x, this.player.y - this.stormCenter.y);
-          if (distToCenter > this.stormRadius && !this.player.isDodging && this.spawnGraceTimer <= 0) {
-            this.player.hp -= 16 * dt;
-            if (Math.random() < 0.09) {
-              SFX.glitchBuzz();
-              triggerHaptic('hit');
-            }
-            this.updateHUD();
-            if (this.player.hp <= 0) {
-              this.runStats.causeOfDeath = 'Liquidation Storm Zone';
-              this.triggerGameOver();
-              return;
+          // The storm bites every seat, not just whoever is holding the
+          // camera. Walked in seat order so all machines agree, and the
+          // buzz roll is drawn for everyone even though only the local
+          // player hears it - skipping the draw would put the clients on
+          // different points of the seeded stream.
+          for (let si = 0; si < this.players.length; si++) {
+            const sp = this.players[si];
+            if (!sp || sp.hp <= 0) continue;
+            const distToCenter = Math.hypot(sp.x - this.stormCenter.x, sp.y - this.stormCenter.y);
+            if (distToCenter > this.stormRadius && !sp.isDodging && this.spawnGraceTimer <= 0) {
+              sp.hp -= 16 * dt;
+              const buzz = Math.random() < 0.09;
+              if (sp === this.player) {
+                if (buzz) { SFX.glitchBuzz(); triggerHaptic('hit'); }
+                this.updateHUD();
+              }
+              if (sp.hp <= 0) {
+                if (this.pvp) { this.eliminateSeat(sp, 'Liquidation Storm Zone'); continue; }
+                if (sp === this.player) {
+                  this.runStats.causeOfDeath = 'Liquidation Storm Zone';
+                  this.triggerGameOver();
+                  return;
+                }
+              }
             }
           }
         }
@@ -4852,8 +4960,15 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         }
 
         // CAMERA DEADZONE & DAMPING
-        const targetCamX = this.player.x - 240;
-        const targetCamY = this.player.y - 240;
+        // Once you are out, the camera follows whoever is still fighting.
+        // Purely local - the camera is never part of what machines agree on.
+        let view = this.player;
+        if (this.spectating) {
+          const alive = this.players.find(q => q && !q.eliminated);
+          if (alive) view = alive;
+        }
+        const targetCamX = view.x - 240;
+        const targetCamY = view.y - 240;
         const deadzone = 14;
 
         if (Math.abs(targetCamX - this.cam.x) > deadzone) {
@@ -5310,6 +5425,34 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             this.ctx.stroke();
           }
           this.ctx.restore();
+
+          // The other people in the match. Render-only - update() never
+           // comes through here, so nothing below can move the simulation.
+          for (let si = 0; si < this.players.length; si++) {
+            const o = this.players[si];
+            if (!o || o === this.player || o.hp <= 0) continue;
+            const oX = o.x - this.cam.x, oY = o.y - this.cam.y;
+            if (oX < -60 || oY < -60 || oX > 540 || oY > 540) continue;
+            const oMoving = (o.vx !== 0 || o.vy !== 0);
+            const oBob = oMoving ? Math.sin(this.animTime * 12) * 2.5 : Math.sin(this.animTime * 3) * 0.8;
+            Sprites.drawProceduralEntity(
+              this.ctx, o.classData.sprite, oX, oY, 32, o.facingAngle, oBob, 0,
+              o.skinData, oMoving, this.animTime, o.weaponData, o.attackPhase,
+              o.attackProgress, o.isDodging, o.dodgeProgress || 0,
+              o.accessory || 'crown', o.capeStyle || 'grand', { x: o.vx, y: o.vy }
+            );
+            // Name plate and health, so you can tell who you are fighting.
+            this.ctx.save();
+            this.ctx.font = 'bold 9px monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#fca5a5';
+            this.ctx.fillText(o.name || '?', oX, oY - 26);
+            this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            this.ctx.fillRect(oX - 16, oY - 23, 32, 3);
+            this.ctx.fillStyle = '#ef4444';
+            this.ctx.fillRect(oX - 16, oY - 23, 32 * Math.max(0, Math.min(1, o.hp / o.maxHp)), 3);
+            this.ctx.restore();
+          }
 
           Sprites.drawProceduralEntity(
             this.ctx,
