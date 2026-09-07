@@ -41,6 +41,7 @@ const MIN_DELAY = 2;            // ticks of input delay, floor
 const MAX_DELAY = 12;           // ~200ms; past here the match is unplayable anyway
 const LATE_MS = 250;            // how long a tick waits for a straggler
 const REDUNDANCY = 3;           // ticks of input repeated in every packet
+const DELAY_COOLDOWN_MS = 8000; // how long a lower RTT must hold before easing off
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -185,6 +186,9 @@ function loadMatch(id) {
     over: false,
     cursor: 0,                 // lowest tick not yet settled
     delay: MIN_DELAY,
+    delaySince: 0,
+    late: 0,                   // ticks filled by timeout - i.e. visible stalls
+    lateBy: new Map(),         // seat -> how many of those were waiting on them
     timer: null,
     logStream: null,
   };
@@ -249,6 +253,13 @@ function sweep(m) {
   if (m.over || !m.started) return;
   const now = Date.now();
   if (m.cursor <= m.headTick && now - m.cursorSince > LATE_MS) {
+    // Whoever we were waiting on gets the blame, so a match report can say
+    // "bob's connection stalled it 40 times" instead of "it felt laggy".
+    const got = m.inputs.get(m.cursor) || {};
+    for (const r of m.roster) {
+      if (got[r.seat] === undefined) m.lateBy.set(r.seat, (m.lateBy.get(r.seat) || 0) + 1);
+    }
+    m.late++;
     settle(m, m.cursor);
     m.cursor++;
     m.cursorSince = now;
@@ -260,15 +271,30 @@ function recomputeDelay(m) {
   // Input delay is set by the WORST connection in the match, because
   // lockstep moves at the pace of the slowest machine. Measured, not
   // guessed: a good lobby should not eat a conservative fixed 100ms.
+  //
+  // But phone RTT jitters by tens of milliseconds around the same real
+  // latency, and the first live match spent the whole fight bouncing
+  // 5-6-5-6. Every change is a cost, so treat a change as something to be
+  // convinced of: go up readily (a rising RTT is a stall forming), come
+  // back down only after it has clearly settled for a while.
   let worst = 0;
   for (const c of m.conns.values()) if (c.rtt > worst) worst = c.rtt;
+  if (!worst) return;
   const ticks = Math.ceil((worst / 2) / TICK_MS) + 1;
-  const d = Math.max(MIN_DELAY, Math.min(MAX_DELAY, ticks));
-  if (d !== m.delay) {
-    m.delay = d;
-    broadcast(m, { op: 'delay', d });
-    log(`match ${m.id}: input delay -> ${d} ticks (${(d * TICK_MS).toFixed(0)}ms), worst rtt ${worst.toFixed(0)}ms`);
+  const want = Math.max(MIN_DELAY, Math.min(MAX_DELAY, ticks));
+  const now = Date.now();
+
+  if (want > m.delay) {
+    m.delay = want;
+    m.delaySince = now;
+  } else if (want < m.delay - 1 && now - (m.delaySince || 0) > DELAY_COOLDOWN_MS) {
+    m.delay -= 1;                 // one step at a time, never a lurch back
+    m.delaySince = now;
+  } else {
+    return;
   }
+  broadcast(m, { op: 'delay', d: m.delay });
+  log(`match ${m.id}: input delay -> ${m.delay} ticks (${(m.delay * TICK_MS).toFixed(0)}ms), worst rtt ${worst.toFixed(0)}ms`);
 }
 
 function checkHashes(m, tick) {
@@ -325,9 +351,17 @@ function endMatch(m, why) {
   // this file, so a disputed result can be re-simulated rather than argued
   // about.
   const placings = Array.from(m.results.values()).sort((a, b) => a.placed - b.placed);
+
+  // How the match actually ran, separate from who won it.
+  const stalls = m.roster.map(r => ({ seat: r.seat, name: r.name, late: m.lateBy.get(r.seat) || 0 }))
+                         .filter(x => x.late > 0)
+                         .sort((a, b) => b.late - a.late);
+  log(`match ${m.id}: ${m.cursor} ticks, ${m.late} filled by timeout`
+      + (stalls.length ? ` — waiting on ${stalls.map(x => `${x.name} x${x.late}`).join(', ')}` : ''));
   try {
     fs.writeFileSync(path.join(DATA, `${m.id}.result.json`), JSON.stringify({
       id: m.id, seed: m.seed, why,
+      ticks: m.cursor, late: m.late, stalls,
       at: Math.floor(Date.now() / 1000),
       seats: m.roster.map(r => ({ seat: r.seat, uid: r.uid, name: r.name })),
       placings,

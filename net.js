@@ -128,8 +128,16 @@
   }
 
   function pushInput(forTick, packet) {
+    // If the delay just rose, `forTick` jumps past a number we never sent.
+    // The server would wait LATE_MS for it and then fill it with a repeat -
+    // a quarter-second stall for everyone, every time the delay moves. Send
+    // the skipped numbers ourselves, carrying this same input.
+    if (net.sent >= 0 && forTick > net.sent + 1) {
+      for (let t = net.sent + 1; t < forTick; t++) net.recent.push([t, packet]);
+    }
     net.recent.push([forTick, packet]);
-    while (net.recent.length > REDUNDANCY) net.recent.shift();
+    // Keep the gap fill in the packet as well as the redundancy window.
+    while (net.recent.length > REDUNDANCY + 8) net.recent.shift();
     // Every packet repeats the last few ticks, so a single dropped one
     // does not stall the barrier for everybody else in the match.
     send({ op: 'input', in: net.recent });
@@ -245,7 +253,7 @@
         case 'seated':  onSeated(msg); break;
         case 'start':   onStart(msg); break;
         case 'inputs':  onInputs(msg); break;
-        case 'delay':   net.delay = msg.d; break;
+        case 'delay':   net.delay = msg.d; break;   // gap handled in pushInput
         case 'desync':  onDesync(msg); break;
         case 'over':    onOver(msg); break;
         case 'denied':  say(`denied: ${msg.why}`, 'text-rose-400'); break;

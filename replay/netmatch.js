@@ -201,6 +201,21 @@ async function main() {
     }
 
     if (simulated < 60) throw new Error(`the match barely moved: ${simulated} ticks`);
+
+    // Close the sockets and let the relay finish, so its own count of ticks
+    // it had to fill by timeout gets printed. A stall is a quarter second
+    // where nobody's screen moved, and it is the thing that actually reads
+    // as lag - separate from the honest, constant input delay, which is
+    // steady and which players adapt to inside a minute.
+    try { A.net.ws.close(); B.net.ws.close(); } catch (e) {}
+    await sleep(400);
+    const lines = relayOut.split(String.fromCharCode(10));
+    const summary = lines.filter(l => l.indexOf('filled by timeout') >= 0);
+    if (summary.length) {
+      const last = summary[summary.length - 1];
+      console.log(last.slice(last.indexOf('match ')));
+    }
+
     console.log(`\nIN SYNC through the relay for ${simulated} ticks (${(simulated / 60).toFixed(1)}s)`);
     console.log(`alive: ${A.game.players.filter(p => !p.eliminated).length}/${SEATS.length}`);
     if (dir) console.log(`input log: ${fs.existsSync(path.join(dir, `${MATCH}.log`)) ? 'written' : 'MISSING'}`);
