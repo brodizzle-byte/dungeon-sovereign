@@ -60,7 +60,11 @@
   /* ── the local player's intent, as a packet ──
    * Read straight off the live input objects, exactly what the engine
    * would have read this frame - then held back and sent instead. */
-  function sample(game) {
+  // Same quantisation bridge.js uses for the recorded log, so a match can
+  // be re-simulated later by the same machinery that verifies solo runs.
+  function q1024(v) { return Math.round(v * 1024) / 1024; }
+
+  function sample(game, facing) {
     const K = game.keys || {};
     const k = ((K['w'] || K['arrowup']) ? 1 : 0) | ((K['s'] || K['arrowdown']) ? 2 : 0)
             | ((K['a'] || K['arrowleft']) ? 4 : 0) | ((K['d'] || K['arrowright']) ? 8 : 0);
@@ -70,6 +74,11 @@
       k,
       m: [r2(game.mousePos.x), r2(game.mousePos.y)],
       t: [T.active ? 1 : 0, r2(T.x), r2(T.y)],
+      // Where this player is pointing. controls.js writes facing directly
+      // - the aim stick and the aim-assist both do - so it is intent that
+      // has to travel, exactly like a keypress. Without it every machine
+      // guesses everybody else's angle and the arenas come apart.
+      f: facing ? [q1024(facing.x), q1024(facing.y)] : null,
       // Taken, not applied: the bridge would otherwise fire these on the
       // next tick, ahead of everybody else's.
       a: root.JB.takeActions(),
@@ -97,6 +106,10 @@
       p.input.keys = keys;
       p.input.mousePos = mouse;
       p.input.touchMovement = touch;
+      if (pk.f) {
+        p.facing = { x: pk.f[0], y: pk.f[1] };
+        p.facingAngle = Math.atan2(pk.f[1], pk.f[0]);   // the portable atan2
+      }
       if (pk.a && pk.a.length) {
         p.pendingActions = (p.pendingActions || []).concat(pk.a);
       }
@@ -107,7 +120,8 @@
     let s = '';
     for (const p of game.players) {
       s += `${p.seat},${p.hp.toFixed(4)},${p.x.toFixed(4)},${p.y.toFixed(4)},`
-         + `${p.stamina.toFixed(3)},${p.mp.toFixed(3)},${p.eliminated ? 1 : 0}|`;
+         + `${p.stamina.toFixed(3)},${p.mp.toFixed(3)},${p.eliminated ? 1 : 0},`
+         + `${(p.facingAngle || 0).toFixed(4)}|`;
     }
     s += `storm:${game.stormRadius.toFixed(4)}:${game.stormTimer.toFixed(4)}`;
     send({ op: 'hash', tick, h: root.JB.fnv1a(s) });
@@ -122,7 +136,10 @@
     net.sent = forTick;
   }
 
-  function sendInput(game, forTick) { pushInput(forTick, sample(game)); }
+  function sendInput(game, forTick) {
+    const me = game.players && game.players[game.mySeat];
+    pushInput(forTick, sample(game, me && me.facing));
+  }
 
   /* ── the clock ──
    * Called from the engine's frame loop instead of its accumulator. We
@@ -135,12 +152,18 @@
     while (net.settled.has(net.tick)) {
       const by = net.settled.get(net.tick);
       net.settled.delete(net.tick);
+      // Read our own aim BEFORE applying the settled tick: applying sets
+      // this seat's facing to what it was `delay` ticks ago, and sampling
+      // after that would send back the echo instead of where the player is
+      // actually pointing now.
+      const me = game.players[game.mySeat];
+      const aim = (me && me.facing) ? { x: me.facing.x, y: me.facing.y } : null;
       applyInputs(game, by);
       // Take our own presses BEFORE the engine ticks. The bridge captures
       // and applies pending actions itself at the top of every tick, so
       // leaving them there means your swing lands on THIS machine and
       // nowhere else - two arenas, one tick apart, immediately.
-      const mine = net.started ? sample(game) : null;
+      const mine = net.started ? sample(game, aim) : null;
       root.JB.tick(game);
       const done = net.tick;
       net.tick++;

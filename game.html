@@ -2603,6 +2603,12 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           e.seat = i;
           e.name = L.name || `Seat ${i + 1}`;
           e.isSeat = true;
+          // Everyone starts pointing the same way. Without this, facing is
+          // undefined until each client's own update invents one, and the
+          // priming ticks carry nothing to correct it - so the arenas begin
+          // disagreeing about aim before a single input has been sent.
+          e.facing = { x: 1, y: 0 };
+          e.facingAngle = 0;
           e.dead = false;          // the damage path checks this
           e.eliminated = false;
           e.kills = 0;

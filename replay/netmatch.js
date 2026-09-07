@@ -94,6 +94,7 @@ function stateOfAll(game) {
   return game.players.map(p => [
     p.seat, p.hp.toFixed(6), p.x.toFixed(6), p.y.toFixed(6),
     p.stamina.toFixed(4), p.mp.toFixed(4), p.eliminated ? 1 : 0,
+    p.facingAngle.toFixed(6),
   ].join(',')).join('|') + `|storm:${game.stormRadius.toFixed(6)}`;
 }
 
@@ -106,7 +107,14 @@ function inputFor(seat, tick) {
   if (phase === 1 || phase === 6) keys.s = true;
   if (phase === 2 || phase === 4) keys.a = true;
   if (phase === 3 || phase === 5 || phase === 6) keys.d = true;
-  return { keys, mx: 120 + ((t * 7) % 240), my: 100 + ((t * 13) % 240), attack: (t % 53) === 0, dodge: (t % 149) === 0 };
+  return {
+    keys, mx: 120 + ((t * 7) % 240), my: 100 + ((t * 13) % 240),
+    // Each client aims only its OWN seat, as a real player does. If facing
+    // does not cross the wire the two arenas disagree about where everyone
+    // is pointing, and attacks land in different places.
+    aim: (t % 23) * (Math.PI * 2 / 23),
+    attack: (t % 53) === 0, dodge: (t % 149) === 0,
+  };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -166,6 +174,11 @@ async function main() {
         const inp = inputFor(C.net.seat, C.net.tick);
         g.keys = inp.keys;
         g.mousePos = { x: inp.mx, y: inp.my };
+        const me = g.players[g.mySeat];
+        if (me) {
+          me.facing = { x: Math.cos(inp.aim), y: Math.sin(inp.aim) };
+          me.facingAngle = inp.aim;
+        }
         if (inp.attack) g.playerAttack();
         if (inp.dodge) g.playerDodge();
         C.net.step(1 / 60);

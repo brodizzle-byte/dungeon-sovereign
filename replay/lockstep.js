@@ -58,6 +58,7 @@ function stateOfAll(game) {
     parts.push([
       p.seat, p.hp.toFixed(6), p.x.toFixed(6), p.y.toFixed(6),
       p.vx.toFixed(6), p.vy.toFixed(6), p.facingAngle.toFixed(6),
+      (p.facing ? p.facing.x.toFixed(6) + ':' + p.facing.y.toFixed(6) : 'none'),
       p.stamina.toFixed(4), p.mp.toFixed(4), p.sips,
       p.attackCd.toFixed(6), p.comboStage, p.isDodging ? 1 : 0,
       p.dodgeTimer.toFixed(6), p.sugarLevel.toFixed(4), p.auraState,
@@ -92,6 +93,11 @@ function inputFor(seat, tick) {
     keys,
     mousePos: { x: 120 + ((t * 7) % 240), y: 100 + ((t * 13) % 240) },
     touchMovement: { active: false, x: 0, y: 0 },
+    // controls.js writes facing straight onto the player, outside the
+    // tick - the aim stick and the aim-assist both do. A harness that
+    // never aims cannot notice that facing is not being transmitted,
+    // which is exactly how the first live match desynced.
+    aim: (t % 23) * (Math.PI * 2 / 23),
     attack: (t % 53) === 0,
     dodge: (t % 149) === 0,
     skill: (t % 211) === 0,
@@ -104,6 +110,23 @@ function drive(inst, tick) {
   for (let seat = 0; seat < game.players.length; seat++) {
     const p = game.players[seat];
     const inp = inputFor(seat, tick);
+    // Aimed the way controls.js aims: written onto the entity itself.
+    //
+    // Quantised to 1/1024 because that is what actually arrives over the
+    // wire - net.js sends facing through the same q1024 the bridge uses
+    // for the recorded log. It matters: bridge.js re-quantises the LOCAL
+    // seat's facing every tick and leaves the others alone, so a raw value
+    // here would drift against its own quantised copy and blame the
+    // engine for the harness's shortcut. (q1024 is idempotent, which is
+    // why the live path stays consistent.)
+    const q = v => Math.round(v * 1024) / 1024;
+    p.facing = { x: q(Math.cos(inp.aim)), y: q(Math.sin(inp.aim)) };
+    // Derived from the quantised pair, not from the raw angle - net.js
+    // does exactly this for every seat, and bridge.js does it for the
+    // local one. Setting the raw angle here leaves the local seat a few
+    // ulps off its own remote copy, which a dodge then turns into real
+    // distance.
+    p.facingAngle = Math.atan2(p.facing.y, p.facing.x);
     // Delivered to every seat the way the relay delivers a settled tick,
     // this machine's own included.
     p.input.keys = inp.keys;
