@@ -8,7 +8,7 @@ const path = require('path');
 const vm = require('vm');
 const os = require('os');
 const { execFileSync } = require('child_process');
-const { makeWindow } = require('./dom.js');
+const { makeWindow, gameScripts } = require('./dom.js');
 
 const seed = parseInt(process.argv[2] || '12345', 10) >>> 0;
 const mode = process.argv[3] || 'story';
@@ -17,9 +17,7 @@ const maxTicks = parseInt(process.argv[4] || '6000', 10);
 const here = __dirname;
 let html = fs.readFileSync(path.join(here, '..', 'game.html'), 'utf8');
 html = html.split('Math.random(').join('JB.rng(');   // same rewrite index.php serves
-const scripts = [];
-const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
-let m; while ((m = re.exec(html)) !== null) scripts.push(m[1]);
+const scripts = gameScripts(html);
 
 const win = makeWindow();
 win.JB_MODE = 'play';

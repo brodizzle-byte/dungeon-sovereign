@@ -58,6 +58,16 @@ function makeWindow() {
       removeItem: k => { storage.delete(k); },
     },
     console: { log() {}, warn() {}, error() {}, info() {} },
+    // Tailwind ships INLINE in the page from the Obsidian edition on, so
+    // the loader now executes it here too. It watches the DOM to decide
+    // what CSS to generate — which in a headless replay is nothing at
+    // all, so these are honest no-ops rather than a fake implementation.
+    MutationObserver: class { observe() {} disconnect() {} takeRecords() { return []; } },
+    ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
+    IntersectionObserver: class { observe() {} unobserve() {} disconnect() {} },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    matchMedia: () => ({ matches: false, addListener() {}, removeListener() {},
+                         addEventListener() {}, removeEventListener() {} }),
     innerWidth: 480, innerHeight: 480, devicePixelRatio: 1,
     _fire(type) { for (const fn of listeners[type] || []) fn({ type }); },
   };
@@ -67,4 +77,32 @@ function makeWindow() {
   return win;
 }
 
-module.exports = { makeWindow, anyProxy };
+/* Every inline script the page runs, in order. */
+function allScripts(html) {
+  const out = [];
+  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) out.push(m[1]);
+  return out;
+}
+
+/* Just the ones that ARE the simulation.
+ *
+ * From the Obsidian edition on the page ships ~400KB of inlined Tailwind
+ * plus a couple of presentation-only helpers (the author labels one of
+ * them "Kept out of the replayed simulation"). None of it can move the
+ * run: it draws no random numbers and touches no game state. It does
+ * throw in a headless vm, so replaying it would only add a third-party
+ * crash surface to every bounty verification.
+ *
+ * The rule is positive - keep whatever defines the engine - and falls
+ * back to running everything if nothing matches, so a future restructure
+ * fails loudly on a missing symbol rather than quietly replaying nothing.
+ */
+function gameScripts(html) {
+  const all = allScripts(html);
+  const sim = all.filter(s => s.includes('GameEngine'));
+  return sim.length ? sim : all;
+}
+
+module.exports = { makeWindow, anyProxy, allScripts, gameScripts };

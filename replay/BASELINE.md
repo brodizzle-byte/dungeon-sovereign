@@ -23,7 +23,14 @@ ticks instead of a handful of end-of-run totals — but their `status` and
 `score` come from the harness forcing an ending, so the comparison ignores
 those two fields and checks the hash instead.
 
-## v7 step 6 — current
+## Obsidian edition — current
+
+Reproduces v7 step 6 **exactly, hash for hash**. The graphical overhaul
+(3x supersampled 1440 canvas, real torch falloff, retextured tiles, new
+HUD) is entirely render-side, and the table below is the proof: the
+author kept the update/render split, so not one number moved.
+
+## v7 step 6
 
 | seed   | mode  | cap  | result                                          | tick | log | rng  | hash     |
 |--------|-------|------|-------------------------------------------------|------|-----|------|----------|
@@ -125,3 +132,17 @@ Three numbers decide whether that is right, all together at the top of the
 file: ENEMY_HIT_SCALE (2.0), ENEMY_SWING_CD (0.5) and ENEMY_WINDUP (0.34).
 They are deliberately in one place because this wants a person playing it,
 not a bot averaging it.
+
+**Obsidian** changed nothing the simulation can see. Two things in the
+harness had to change to keep it that way, both ours, neither the game's:
+
+  * Tailwind now ships INLINE instead of from a CDN, so replay/dom.js
+    gained MutationObserver and friends, and the loaders take only the
+    script that defines GameEngine (see gameScripts). Replaying 400KB of
+    PostCSS on every bounty is cost and crash surface for nothing.
+  * That inlined bundle carries three Math.random calls. index.php used to
+    rewrite the whole file, which would have put a CSS framework on the
+    run's seeded stream in the BROWSER while the server skipped it. The
+    rewrite is now scoped to the simulation script. The parity gate could
+    never have caught that one - both sides of the harness skip Tailwind,
+    so only a real player would have diverged.
