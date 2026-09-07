@@ -2629,7 +2629,13 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.gladiatorsAlive = this.players.length;
         this.updateGladiatorsLeft();
         this.updateHUD();
-        this.addCombatLog(`\u2694\ufe0f ${this.players.length}-PLAYER GLADIATOR NIGHT`, 'text-amber-400 font-bold');
+        // startArenaBattleRoyale logged a 50-gladiator opener on the way in;
+        // this is a different event and the log should not claim otherwise.
+        const logEl = document.getElementById('combat-log');
+        if (logEl) logEl.innerHTML = '';
+        this.addCombatLog(`\u2694\ufe0f GLADIATOR NIGHT \u2014 ${this.players.length} in the arena`, 'text-amber-400 font-bold');
+        this.addCombatLog('\u2620\ufe0f Last one standing. No bots.', 'text-slate-300');
+        this.updateHUD();
       }
 
       spawnReinforcementGladiator() {
@@ -5941,11 +5947,17 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
 
         document.getElementById('ui-sips-count-top').innerText = `${this.player.sips}/${this.player.maxSips}`;
         document.getElementById('float-sip-badge').innerText = this.player.sips;
-        document.getElementById('ui-floor-text').innerText = this.gameMode === 'arena' ? '50-Gladiator Colosseum' : `B${this.currentFloor}: ${this.dungeon.biomeName}`;
+        document.getElementById('ui-floor-text').innerText = this.gameMode === 'arena'
+          ? (this.pvp ? `Gladiator Night — ${this.totalArenaCompetitors} in`
+                      : `${this.totalArenaCompetitors}-Gladiator Colosseum`)
+          : `B${this.currentFloor}: ${this.dungeon.biomeName}`;
       }
 
       updateGladiatorsLeft() {
-        document.getElementById('ui-gladiators-left').innerText = `${this.gladiatorsAlive}/50`;
+        // Out of however many are actually in this match. A 3-player night
+        // reading "3/50" looks like 47 opponents still to come.
+        document.getElementById('ui-gladiators-left').innerText =
+          `${this.gladiatorsAlive}/${this.totalArenaCompetitors || 50}`;
       }
 
       addCombatLog(msg, colorClass = 'text-slate-300') {
