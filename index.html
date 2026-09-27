@@ -2,13 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Dungeon Sovereign: Degen Edition v6.5</title>
   
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- Google Fonts: JetBrains Mono and Cinzel -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -31,22 +28,18 @@
       box-sizing: border-box;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
       touch-action: manipulation;
     }
-    body {
-      background-color: #030508;
+    html, body {
+      background-color: #020408;
       color: #e2e8f0;
       font-family: 'JetBrains Mono', monospace;
       overflow: hidden;
       margin: 0;
       padding: 0;
-      height: 100vh;
-      width: 100vw;
-    }
-    .scanlines {
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.28) 50%);
-      background-size: 100% 4px;
-      pointer-events: none;
+      height: 100%;
+      width: 100%;
     }
     #viewport-wrapper {
       position: relative;
@@ -55,7 +48,9 @@
       max-width: 480px;
       max-height: 480px;
       aspect-ratio: 1 / 1;
-      box-shadow: 0 0 40px rgba(0, 0, 0, 0.95), 0 0 25px rgba(0, 240, 255, 0.2);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.9), 0 0 15px rgba(0, 240, 255, 0.15);
     }
     canvas#gameCanvas {
       width: 100%;
@@ -63,600 +58,481 @@
       image-rendering: pixelated;
       image-rendering: crisp-edges;
       display: block;
+      touch-action: none;
     }
     #joystick-base {
       position: absolute;
-      width: 90px;
-      height: 90px;
+      width: 76px;
+      height: 76px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(0,240,255,0.2) 0%, rgba(15,23,42,0.8) 80%);
-      border: 2px solid rgba(0,240,255,0.6);
+      background: radial-gradient(circle, rgba(0,240,255,0.2) 0%, rgba(15,23,42,0.85) 80%);
+      border: 2px solid rgba(0,240,255,0.5);
       transform: translate(-50%, -50%);
       pointer-events: none;
       display: none;
-      z-index: 30;
-      box-shadow: 0 0 15px rgba(0,240,255,0.4);
+      z-index: 35;
     }
     #joystick-knob {
       position: absolute;
-      width: 38px;
-      height: 38px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       background: radial-gradient(circle, #00f0ff 0%, #0284c7 100%);
-      border: 2px solid #fff;
+      border: 2px solid #ffffff;
       transform: translate(-50%, -50%);
       pointer-events: none;
-      box-shadow: 0 0 12px #00f0ff;
     }
     .float-btn {
-      transition: transform 0.08s, box-shadow 0.12s;
+      transition: transform 0.06s ease-out;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .float-btn:active {
       transform: scale(0.88);
     }
     .screen-overlay {
-      background-color: rgba(3, 5, 10, 0.94);
-      backdrop-filter: blur(10px);
+      background-color: rgba(3, 5, 10, 0.96);
+      backdrop-filter: blur(8px);
     }
-    ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-    ::-webkit-scrollbar-track {
-      background: rgba(15, 23, 42, 0.6);
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(56, 189, 248, 0.4);
-      border-radius: 3px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(56, 189, 248, 0.8);
-    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.4); border-radius: 2px; }
   </style>
 </head>
-<body class="relative flex flex-col h-screen w-screen bg-[#030508] text-slate-200">
-  
-  <!-- CRT Scanlines Effect -->
-  <div class="scanlines absolute inset-0 z-50 pointer-events-none opacity-25"></div>
+<body class="relative flex flex-col h-full w-full bg-[#020408] text-slate-200 select-none">
 
-  <!-- MAIN HUD TOP BAR -->
-  <header id="hud-header" class="h-14 bg-gradient-to-b from-[#10141f] to-[#080b12] border-b border-[#1e2738] flex items-center justify-between px-2 sm:px-4 z-20 shadow-md shrink-0">
-    <div class="flex items-center gap-2 sm:gap-3">
-      <!-- Floor Badge -->
-      <div id="ui-floor-badge" class="flex items-center gap-1 px-2 py-0.5 bg-black/60 border border-purple-500/50 rounded text-[10px] sm:text-[11px] font-bold text-purple-300 font-cinzel">
-        <span>🏰</span>
-        <span id="ui-floor-text">B1: Catacombs</span>
+  <!-- MAIN HUD -->
+  <header id="hud-header" class="h-11 bg-gradient-to-b from-[#10141f] to-[#080b12] border-b border-[#1e2738] flex items-center justify-between px-2 sm:px-3 z-30 shadow shrink-0 select-none">
+    <div class="flex items-center gap-1 sm:gap-2">
+      <div id="ui-floor-badge" class="flex items-center gap-1 px-1.5 py-0.5 bg-black/70 border border-purple-500/40 rounded text-[10px] font-bold text-purple-300 font-cinzel">
+        <span>🏰</span><span id="ui-floor-text">B1: Catacombs</span>
       </div>
 
-      <!-- Health Bar (Solvency) -->
-      <div class="flex items-center gap-1 px-1.5 py-0.5 bg-black/60 border border-red-500/50 rounded text-[10px]">
+      <div class="flex items-center gap-1 px-1.5 py-0.5 bg-black/70 border border-red-500/40 rounded text-[9px]">
         <span class="text-red-400 font-bold">HP</span>
-        <div class="w-14 sm:w-18 h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
-          <div id="hp-bar" class="h-full bg-gradient-to-r from-red-600 to-rose-400 w-full transition-all duration-100"></div>
+        <div class="w-14 sm:w-20 h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
+          <div id="hp-bar" class="h-full bg-gradient-to-r from-red-600 to-rose-400 w-full transition-all duration-75"></div>
         </div>
-        <span id="ui-hp-text" class="text-[9px] font-bold text-red-300">170</span>
+        <span id="ui-hp-text" class="font-bold text-red-200">170</span>
       </div>
 
-      <!-- Mana & Stamina Stacked Cluster -->
       <div class="flex flex-col gap-0.5">
-        <div class="flex items-center gap-1 px-1 py-0.2 bg-black/60 border border-cyan-500/40 rounded text-[9px]">
+        <div class="flex items-center gap-1 px-1 py-0.2 bg-black/70 border border-cyan-500/30 rounded text-[8px]">
           <span class="text-cyan-400 font-bold">MP</span>
-          <div class="w-12 sm:w-16 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
-            <div id="mp-bar" class="h-full bg-gradient-to-r from-cyan-600 to-sky-300 w-full transition-all duration-100"></div>
+          <div class="w-10 sm:w-14 h-1 bg-slate-950 rounded-full overflow-hidden">
+            <div id="mp-bar" class="h-full bg-cyan-400 w-full"></div>
           </div>
         </div>
-
-        <div class="flex items-center gap-1 px-1 py-0.2 bg-black/60 border border-amber-500/40 rounded text-[9px]">
-          <span class="text-amber-400 font-bold">STM</span>
-          <div class="w-12 sm:w-16 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
-            <div id="stam-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-full transition-all duration-100"></div>
+        <div class="flex items-center gap-1 px-1 py-0.2 bg-black/70 border border-amber-500/30 rounded text-[8px]">
+          <span class="text-amber-400 font-bold">ST</span>
+          <div class="w-10 sm:w-14 h-1 bg-slate-950 rounded-full overflow-hidden">
+            <div id="stam-bar" class="h-full bg-amber-400 w-full"></div>
           </div>
         </div>
       </div>
 
-      <!-- Sugar & Aura Status Meter -->
-      <div class="hidden md:flex items-center gap-1.5 px-2 py-0.5 bg-black/60 border rounded text-[10px]" id="ui-sugar-badge">
+      <div id="ui-sugar-badge" class="hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-black/70 border border-slate-700 rounded text-[9px]">
         <span id="ui-sugar-icon">🧪</span>
         <div class="flex flex-col text-[8px] leading-tight font-bold">
-          <span id="ui-sugar-text" class="text-slate-300">SUGAR: 0%</span>
+          <span id="ui-sugar-text" class="text-slate-300">0%</span>
           <span id="ui-aura-state" class="text-slate-400 font-cinzel">Normal</span>
         </div>
       </div>
 
-      <!-- Sips Counter in Header -->
-      <div class="hidden sm:flex items-center gap-1 px-2 py-0.5 bg-emerald-950/70 border border-emerald-500/60 rounded text-[10px] text-emerald-300 font-bold">
-        <span>🧪</span>
-        <span id="ui-sips-count-top">3/3</span>
+      <div class="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/50 rounded text-[9px] text-emerald-300 font-bold">
+        <span>🧪</span><span id="ui-sips-count-top">3/3</span>
       </div>
     </div>
 
-    <!-- Right Controls -->
-    <div class="flex items-center gap-1.5 sm:gap-2">
-      <div id="ui-arena-alive" style="display: none;" class="items-center gap-1 px-2 py-0.5 bg-red-950/80 border border-red-500 rounded text-[11px] font-bold text-red-300">
-        <span>⚔️</span>
-        <span id="ui-gladiators-left">50/50</span>
+    <div class="flex items-center gap-1">
+      <div id="ui-arena-alive" style="display: none;" class="items-center gap-1 px-1.5 py-0.5 bg-red-950/80 border border-red-500/80 rounded text-[9px] font-bold text-red-300">
+        <span>⚔️</span><span id="ui-gladiators-left">50/50</span>
       </div>
-
-      <button id="btn-open-inv" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] sm:text-[11px] font-bold rounded transition">🎒 Inv (I)</button>
-      <button id="btn-open-stats" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-amber-600/60 text-amber-300 text-[10px] sm:text-[11px] font-bold rounded transition">📊 HoF</button>
-      <button id="btn-toggle-audio" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] sm:text-[11px] font-bold rounded transition">🔊</button>
-      <button id="btn-pause-toggle" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] sm:text-[11px] font-bold rounded transition">⏸️</button>
+      <button id="btn-open-inv" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-bold rounded text-slate-200">🎒 Inv</button>
+      <button id="btn-open-stats" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-amber-600/50 text-amber-300 text-[10px] font-bold rounded">📊 HoF</button>
+      <button id="btn-toggle-audio" class="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-bold rounded">🔊</button>
+      <button id="btn-pause-toggle" class="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-bold rounded">⏸️</button>
     </div>
   </header>
 
-  <!-- CENTERED 480x480 VIEWPORT CONTAINER -->
-  <main class="relative flex-1 w-full h-full overflow-hidden bg-[#020305] flex items-center justify-center p-1 sm:p-3">
-    <div id="viewport-wrapper" class="relative rounded-lg overflow-hidden border-2 border-slate-800 bg-black">
+  <!-- VIEWPORT -->
+  <main class="relative flex-1 w-full h-full overflow-hidden bg-[#020305] flex items-center justify-center p-1 sm:p-2">
+    <div id="viewport-wrapper" class="relative rounded-lg overflow-hidden border border-slate-800 bg-black">
       <canvas id="gameCanvas" width="480" height="480"></canvas>
 
-      <!-- Dynamic Touch Joystick Elements (Left 50%) -->
-      <div id="joystick-base">
-        <div id="joystick-knob"></div>
-      </div>
+      <!-- Joystick -->
+      <div id="joystick-base"><div id="joystick-knob"></div></div>
 
-      <!-- Boss Global Health Bar (Top Canvas Overlay) -->
-      <div id="boss-hud-overlay" style="display: none;" class="absolute top-2 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-black/90 border-2 border-red-500/80 rounded-md p-1.5 flex flex-col items-center gap-1 backdrop-blur z-20 shadow-2xl">
-        <div class="flex justify-between w-full text-[10px] font-cinzel font-bold text-red-400">
-          <span id="boss-name" class="tracking-wide">👑 ABYSSAL TITAN (FLOOR GUARDIAN)</span>
-          <span id="boss-hp-text">450 / 450 HP</span>
+      <!-- Boss HUD -->
+      <div id="boss-hud-overlay" style="display: none;" class="absolute top-1 left-1/2 -translate-x-1/2 w-11/12 max-w-sm bg-black/90 border border-red-500/70 rounded p-1 flex flex-col items-center gap-0.5 z-20 pointer-events-none">
+        <div class="flex justify-between w-full text-[9px] font-cinzel font-bold text-red-400 px-1">
+          <span id="boss-name" class="truncate">👑 ABYSSAL TITAN</span>
+          <span id="boss-hp-text" class="shrink-0 ml-1">450 / 450 HP</span>
         </div>
-        <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-red-900/80">
-          <div id="boss-hp-fill" class="h-full bg-gradient-to-r from-red-600 via-rose-500 to-amber-500 w-full transition-all duration-100"></div>
+        <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-red-900/60">
+          <div id="boss-hp-fill" class="h-full bg-gradient-to-r from-red-600 via-rose-500 to-amber-500 w-full transition-all duration-75"></div>
         </div>
-        <div id="boss-phase-badge" class="text-[8px] font-mono text-amber-300 font-bold">PHASE 1: RADIAL STOMP & SHOCKWAVES</div>
+        <div id="boss-phase-badge" class="text-[7px] font-mono text-amber-300 font-bold">PHASE 1: RADIAL STOMP</div>
       </div>
 
-      <!-- Spawn Grace Period Indicator -->
-      <div id="grace-period-banner" style="display: none;" class="absolute top-12 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-cyan-500/90 text-black font-extrabold text-[10px] rounded-full shadow-lg z-20 animate-pulse tracking-wide font-cinzel">
-        🛡️ SPAWN GRACE: INVULNERABLE 🛡️
+      <!-- Floating Toast Indicator -->
+      <div id="game-toast" style="display: none;" class="absolute top-7 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-slate-950/90 border border-cyan-400/60 text-cyan-300 text-[9px] font-bold rounded-full shadow z-25 pointer-events-none font-cinzel text-center whitespace-nowrap">
+        🛡️ SPAWN GRACE: INVULNERABLE
       </div>
 
-      <!-- Floor Infusion Reward Banner -->
-      <div id="infusion-reward-banner" style="display: none;" class="absolute top-12 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 font-black text-[10px] rounded-full shadow-2xl z-30 animate-bounce tracking-wider font-cinzel text-center border border-amber-200">
-        ✨ FLOOR INFUSION: +15 HP • +3 ATK • +1 DEF • +1 SIP! ✨
-      </div>
+      <!-- Compact Killfeed (Max 2 lines) -->
+      <div id="arena-killfeed" class="absolute top-1 left-1 flex flex-col gap-0.5 pointer-events-none z-20 max-w-[180px] text-[8px]"></div>
 
-      <!-- Arena Storm Timer Banner -->
-      <div id="arena-storm-warning" style="display: none;" class="absolute top-10 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-purple-950/90 border border-purple-500 rounded-full text-[10px] font-bold text-purple-200 shadow-xl backdrop-blur z-20 animate-pulse">
-        ⚠️ LIQUIDATION STORM: <span id="storm-timer-text" class="text-amber-400 font-mono">30s</span>
-      </div>
+      <!-- Sleek Event Ticker (Max 2 lines) -->
+      <div id="combat-log" class="absolute bottom-1 left-1 max-w-[200px] flex flex-col gap-0.5 pointer-events-none z-20 text-[8px]"></div>
 
-      <!-- Dynamic Aura / Sugar Status Banner -->
-      <div id="sugar-rush-banner" style="display: none;" class="absolute bottom-20 left-1/2 -translate-x-1/2 px-3 py-0.5 font-extrabold text-[10px] rounded-full shadow-lg z-20 tracking-wide font-cinzel text-center"></div>
+      <!-- Legacy Compatibility Placeholders -->
+      <div id="grace-period-banner" style="display:none"></div>
+      <div id="infusion-reward-banner" style="display:none"></div>
+      <div id="arena-storm-warning" style="display:none"><span id="storm-timer-text"></span></div>
+      <div id="sugar-rush-banner" style="display:none"></div>
 
-      <!-- Killfeed Overlay -->
-      <div id="arena-killfeed" class="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none z-20 max-w-[210px] text-[10px]"></div>
-
-      <!-- Action Combat Log -->
-      <div id="combat-log" class="absolute bottom-2 left-2 w-44 max-h-20 bg-black/75 border border-slate-800 rounded p-1 text-[9px] leading-tight flex flex-col justify-end gap-0.5 pointer-events-none backdrop-blur shadow z-20 overflow-hidden"></div>
-
-      <!-- ACTION BUTTON GRID: SIPS TO BOTTOM-RIGHT -->
-      <div id="floating-action-cluster" class="absolute bottom-2 right-2 flex flex-col gap-2 z-30 select-none">
-        <!-- Top Row: Primary Attack [J] (Crimson) & Class Skill [K] (Arcane Cyan) -->
-        <div class="flex gap-2">
-          <!-- Top-Left: Primary Attack [J] (Crimson) -->
-          <button id="float-btn-attack" class="float-btn w-14 h-14 bg-gradient-to-br from-rose-600 via-red-700 to-red-950 border-2 border-rose-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-xl shadow-rose-950/80 hover:border-rose-200 active:scale-90 transition">
-            <span class="text-xl">⚔️</span>
-            <span class="text-[9px] font-black tracking-wider text-rose-100 leading-none">ATK (J)</span>
+      <!-- Action Button Grid -->
+      <div id="floating-action-cluster" class="absolute bottom-2 right-2 flex flex-col gap-1.5 z-30 select-none">
+        <div class="flex gap-1.5">
+          <button id="float-btn-attack" aria-label="Attack" class="float-btn w-13 h-13 sm:w-14 sm:h-14 bg-gradient-to-br from-rose-600 via-red-700 to-red-950 border-2 border-rose-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-lg">
+            <span class="text-base">⚔️</span>
+            <span class="text-[8px] font-black tracking-wider text-rose-100 leading-none">ATK (J)</span>
           </button>
-
-          <!-- Top-Right: Class Skill [K] (Arcane Cyan) -->
-          <button id="float-btn-skill" class="float-btn w-14 h-14 bg-gradient-to-br from-cyan-600 via-sky-800 to-slate-950 border-2 border-cyan-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-xl shadow-cyan-950/80 hover:border-cyan-200 active:scale-90 transition">
-            <span class="text-xl">✨</span>
-            <span class="text-[9px] font-extrabold text-cyan-200 leading-none">SKILL (K)</span>
+          <button id="float-btn-skill" aria-label="Skill" class="float-btn w-13 h-13 sm:w-14 sm:h-14 bg-gradient-to-br from-cyan-600 via-sky-800 to-slate-950 border-2 border-cyan-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-lg">
+            <span class="text-base">✨</span>
+            <span class="text-[8px] font-extrabold text-cyan-200 leading-none">SKILL (K)</span>
           </button>
         </div>
-
-        <!-- Bottom Row: Dodge Roll [L] (Amber) & Sips Drink [H] (Emerald/Pink with live counter) -->
-        <div class="flex gap-2">
-          <!-- Bottom-Left: Dodge Roll [L] (Amber) -->
-          <button id="float-btn-dodge" class="float-btn w-14 h-14 bg-gradient-to-br from-amber-600 via-amber-800 to-amber-950 border-2 border-amber-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-xl shadow-amber-950/80 hover:border-amber-200 active:scale-90 transition">
-            <span class="text-xl">💨</span>
-            <span class="text-[9px] font-extrabold text-amber-200 leading-none">ROLL (L)</span>
+        <div class="flex gap-1.5">
+          <button id="float-btn-dodge" aria-label="Dodge" class="float-btn w-13 h-13 sm:w-14 sm:h-14 bg-gradient-to-br from-amber-600 via-amber-800 to-amber-950 border-2 border-amber-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-lg">
+            <span class="text-base">💨</span>
+            <span class="text-[8px] font-extrabold text-amber-200 leading-none">ROLL (L)</span>
           </button>
-
-          <!-- Bottom-Right: Sips Drink [H] (Emerald/Pink with live sip counter badge) -->
-          <button id="float-btn-sip" class="float-btn relative w-14 h-14 bg-gradient-to-br from-emerald-600 via-teal-800 to-emerald-950 border-2 border-emerald-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-xl shadow-emerald-950/80 hover:border-pink-300 active:scale-90 transition">
-            <span class="text-xl">🧪</span>
-            <span class="text-[9px] font-extrabold text-emerald-200 leading-none">SIP (H)</span>
-            <span id="float-sip-badge" class="absolute -top-1.5 -right-1.5 px-2 py-0.5 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-[10px] rounded-full shadow-lg border border-pink-200">3</span>
+          <button id="float-btn-sip" aria-label="Sip" class="float-btn relative w-13 h-13 sm:w-14 sm:h-14 bg-gradient-to-br from-emerald-600 via-teal-800 to-emerald-950 border-2 border-emerald-400 rounded-2xl flex flex-col items-center justify-center font-bold text-white shadow-lg">
+            <span class="text-base">🧪</span>
+            <span class="text-[8px] font-extrabold text-emerald-200 leading-none">SIP (H)</span>
+            <span id="float-sip-badge" class="absolute -top-1 -right-1 px-1.5 py-0.2 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-[8px] rounded-full border border-pink-200">3</span>
           </button>
         </div>
       </div>
     </div>
   </main>
 
-  <!-- BOTTOM ACTION BAR (DESKTOP CONTROLS HELPER) -->
-  <footer id="hud-footer" class="h-10 bg-gradient-to-t from-[#10141f] to-[#080b12] border-t border-[#1e2738] flex items-center justify-center gap-3 md:gap-5 px-3 z-20 shadow-md shrink-0">
-    <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-700 rounded cursor-pointer hover:border-rose-500 transition" id="bar-action-attack">
-      <div class="w-4 h-4 rounded bg-rose-950 border border-rose-600 flex items-center justify-center text-[9px] font-bold text-rose-300">J</div>
-      <div class="text-[10px] font-bold text-rose-400">Weapon Strike (15 STM)</div>
+  <!-- Desktop Helpers (hidden on mobile) -->
+  <footer id="hud-footer" class="hidden md:flex h-7 bg-[#080b12] border-t border-[#1e2738] items-center justify-center gap-4 px-3 z-20 shrink-0 text-[8px] text-slate-400 select-none">
+    <div class="flex items-center gap-1 cursor-pointer" id="bar-action-attack">
+      <kbd class="px-1 bg-slate-800 border border-slate-600 rounded text-rose-300 font-bold">J</kbd><span>Attack (15 ST)</span>
     </div>
-    <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-700 rounded cursor-pointer hover:border-purple-500 transition" id="bar-action-skill">
-      <div class="w-4 h-4 rounded bg-purple-950 border border-purple-600 flex items-center justify-center text-[9px] font-bold text-purple-300">K</div>
-      <div id="ui-skill-name" class="text-[10px] font-bold text-purple-400">Skill (30 STM)</div>
+    <div class="flex items-center gap-1 cursor-pointer" id="bar-action-skill">
+      <kbd class="px-1 bg-slate-800 border border-slate-600 rounded text-purple-300 font-bold">K</kbd><span id="ui-skill-name">Whirlwind</span>
     </div>
-    <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-700 rounded cursor-pointer hover:border-cyan-500 transition" id="bar-action-dodge">
-      <div class="w-4 h-4 rounded bg-cyan-950 border border-cyan-600 flex items-center justify-center text-[9px] font-bold text-cyan-300">L</div>
-      <div class="text-[10px] font-bold text-cyan-400">Dodge Roll (25 STM)</div>
+    <div class="flex items-center gap-1 cursor-pointer" id="bar-action-dodge">
+      <kbd class="px-1 bg-slate-800 border border-slate-600 rounded text-amber-300 font-bold">L</kbd><span>Roll (25 ST)</span>
     </div>
-    <div class="flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-700 rounded cursor-pointer hover:border-emerald-500 transition" id="bar-action-sip">
-      <div class="w-4 h-4 rounded bg-emerald-950 border border-emerald-600 flex items-center justify-center text-[9px] font-bold text-emerald-300">H</div>
-      <div class="text-[10px] font-bold text-emerald-400">Take a Sip (+35% Sugar)</div>
+    <div class="flex items-center gap-1 cursor-pointer" id="bar-action-sip">
+      <kbd class="px-1 bg-slate-800 border border-slate-600 rounded text-emerald-300 font-bold">H</kbd><span>Sip (+35% Sugar)</span>
     </div>
   </footer>
 
-  <!-- ======================== SCREEN 1: STRICT MAIN MENU ======================== -->
-  <div id="screen-main-menu" style="display: flex;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-md w-full flex flex-col items-center text-center gap-5 bg-slate-900/90 border-2 border-slate-700 rounded-2xl p-6 shadow-2xl">
+  <!-- SCREENS / MODALS -->
+  <div id="screen-main-menu" style="display: flex;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-3 overflow-y-auto">
+    <div class="max-w-sm sm:max-w-md w-full flex flex-col items-center text-center gap-3.5 bg-slate-900/95 border border-slate-700 rounded-2xl p-5 shadow-2xl my-auto">
       <div>
-        <div class="text-3xl mb-1">👑</div>
-        <h1 class="font-cinzel text-3xl sm:text-4xl font-black tracking-wider bg-gradient-to-r from-cyan-400 via-purple-400 to-amber-400 bg-clip-text text-transparent drop-shadow-lg">
-          DUNGEON SOVEREIGN
-        </h1>
-        <p class="text-xs font-cinzel font-bold text-amber-400 tracking-[0.3em] mt-1">
-          DEGEN EDITION v6.5
-        </p>
+        <div class="text-3xl mb-0.5">👑</div>
+        <h1 class="font-cinzel text-2xl sm:text-3xl font-black tracking-wider bg-gradient-to-r from-cyan-400 via-purple-400 to-amber-400 bg-clip-text text-transparent">DUNGEON SOVEREIGN</h1>
+        <p class="text-[10px] font-cinzel font-bold text-amber-400 tracking-[0.25em] mt-0.5">DEGEN EDITION v6.5 • 60 FPS ULTRA</p>
       </div>
 
-      <!-- Dynamic Last Run Status Banner -->
-      <div id="menu-run-status-banner" style="display: none;" class="w-full bg-slate-950/85 border-2 border-amber-500/70 rounded-xl p-3 flex items-center justify-between shadow-xl backdrop-blur select-none">
-        <div class="flex items-center gap-2.5">
-          <span id="menu-run-badge" class="px-2.5 py-1 bg-emerald-500/20 border-2 border-emerald-400 text-emerald-300 font-black rounded-lg text-xs tracking-wider">🏆 CLEARED</span>
+      <div id="menu-run-status-banner" style="display: none;" class="w-full bg-slate-950/90 border border-amber-500/60 rounded-xl p-2 flex items-center justify-between select-none">
+        <div class="flex items-center gap-2">
+          <span id="menu-run-badge" class="px-2 py-0.5 bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-black rounded text-[9px]">🏆 CLEARED</span>
           <div class="text-left leading-tight">
-            <div id="menu-run-title" class="font-cinzel font-black text-xs text-amber-300">SOVEREIGN THRONE CLAIMED</div>
-            <div id="menu-run-desc" class="text-[10px] text-slate-300 font-mono">Floor 10 Final Guardian Slain</div>
+            <div id="menu-run-title" class="font-cinzel font-bold text-[10px] text-amber-300">SOVEREIGN THRONE CLAIMED</div>
+            <div id="menu-run-desc" class="text-[8px] text-slate-400 font-mono">Floor 10 Slain</div>
           </div>
         </div>
-        <div id="menu-run-stats" class="text-right text-[10px] text-slate-400 font-mono">Kills: <b class="text-slate-100">0</b><br>Score: <b class="text-amber-300">0</b></div>
+        <div id="menu-run-stats" class="text-right text-[8px] text-slate-400 font-mono">Kills: <b class="text-slate-100">0</b><br>Score: <b class="text-amber-300">0</b></div>
       </div>
 
-      <!-- Mode Selection -->
-      <div class="w-full flex flex-col gap-3">
-        <button id="btn-menu-campaign" class="w-full py-3.5 px-4 bg-gradient-to-r from-purple-900/90 to-slate-900 hover:from-purple-800 hover:to-slate-800 border-2 border-purple-500/80 rounded-xl flex items-center justify-between shadow-lg transition">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">🏰</span>
-            <div class="text-left">
-              <div class="font-cinzel font-bold text-sm text-slate-100">STORY DUNGEON CRAWL</div>
-              <div class="text-[10px] text-purple-300">Floors B1-B9 tiered scaling, Floor Infusion buffs, Abyssal Titan Bosses</div>
+      <div class="w-full flex flex-col gap-2">
+        <button id="btn-menu-campaign" class="w-full py-2.5 px-3 bg-gradient-to-r from-purple-900/80 to-slate-900 hover:from-purple-800 border border-purple-500/70 rounded-xl flex items-center justify-between shadow transition">
+          <div class="flex items-center gap-2 text-left">
+            <span class="text-xl">🏰</span>
+            <div>
+              <div class="font-cinzel font-bold text-xs text-slate-100">STORY DUNGEON CRAWL</div>
+              <div class="text-[8px] text-purple-300">B1-B10 scaling, Floor Infusions, Titan Bosses</div>
             </div>
           </div>
-          <span class="text-purple-400 font-bold text-lg">→</span>
+          <span class="text-purple-400 font-bold">→</span>
         </button>
-
-        <button id="btn-menu-arena" class="w-full py-3.5 px-4 bg-gradient-to-r from-rose-900/90 to-slate-900 hover:from-rose-800 hover:to-slate-800 border-2 border-rose-500/80 rounded-xl flex items-center justify-between shadow-lg transition">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">⚔️</span>
-            <div class="text-left">
-              <div class="font-cinzel font-bold text-sm text-slate-100">50-GLADIATOR BATTLE ROYALE</div>
-              <div class="text-[10px] text-rose-300">Smooth active pool, paced drop reinforcements, shrinking liquidation storm</div>
+        <button id="btn-menu-arena" class="w-full py-2.5 px-3 bg-gradient-to-r from-rose-900/80 to-slate-900 hover:from-rose-800 border border-rose-500/70 rounded-xl flex items-center justify-between shadow transition">
+          <div class="flex items-center gap-2 text-left">
+            <span class="text-xl">⚔️</span>
+            <div>
+              <div class="font-cinzel font-bold text-xs text-slate-100">50-GLADIATOR BATTLE ROYALE</div>
+              <div class="text-[8px] text-rose-300">Fast action, paced drops, shrinking liquidation storm</div>
             </div>
           </div>
-          <span class="text-rose-400 font-bold text-lg">→</span>
+          <span class="text-rose-400 font-bold">→</span>
         </button>
       </div>
 
-      <!-- Utility Buttons -->
-      <div class="w-full flex gap-3">
-        <button id="btn-menu-hof" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 border border-amber-600/70 text-amber-300 font-cinzel font-bold text-xs rounded-lg transition shadow">
-          🏆 Global Telemetry & HoF
-        </button>
-        <button id="btn-menu-guide" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 font-cinzel font-bold text-xs rounded-lg transition shadow">
-          📖 Degen Codex
-        </button>
+      <div class="w-full flex gap-2">
+        <button id="btn-menu-hof" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 border border-amber-600/60 text-amber-300 font-cinzel font-bold text-[10px] rounded-lg shadow">🏆 Leaderboard & HoF</button>
+        <button id="btn-menu-guide" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 font-cinzel font-bold text-[10px] rounded-lg shadow">📖 Degen Codex</button>
       </div>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 2: CHARACTER SELECT (WEAPONS, SKINS & CUSTOM DYES) ======================== -->
-  <div id="screen-char-select" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-2 sm:p-4 overflow-y-auto">
-    <div class="max-w-2xl w-full flex flex-col items-center text-center gap-3 bg-slate-900/95 border-2 border-cyan-500/80 rounded-2xl p-3 sm:p-5 shadow-2xl my-auto">
-      <div class="flex justify-between items-center w-full border-b border-slate-800 pb-2">
-        <button id="btn-char-back" class="px-3 py-1 bg-slate-800 border border-slate-700 text-xs font-bold rounded text-slate-300 hover:text-white">← Back</button>
-        <h2 class="font-cinzel text-base sm:text-lg font-bold text-cyan-400">CHAMPION ARSENAL & SKINS</h2>
-        <div class="w-12"></div>
+  <div id="screen-char-select" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-2 sm:p-3 overflow-y-auto">
+    <div class="max-w-2xl w-full flex flex-col items-center text-center gap-2 bg-slate-900/95 border border-cyan-500/70 rounded-2xl p-3 sm:p-4 shadow-2xl my-auto">
+      <div class="flex justify-between items-center w-full border-b border-slate-800 pb-1">
+        <button id="btn-char-back" class="px-2.5 py-0.5 bg-slate-800 border border-slate-700 text-xs font-bold rounded text-slate-300 hover:text-white">← Back</button>
+        <h2 class="font-cinzel text-sm font-bold text-cyan-400">CHAMPION ARSENAL & SKINS</h2>
+        <div class="w-10"></div>
       </div>
 
-      <!-- Main Customizer Grid -->
-      <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-3">
-        <!-- Live Animated Preview Canvas with Shadow Squish, Weapon Sway & Flourish -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 relative">
-          <div class="text-[10px] font-cinzel font-bold text-cyan-400 uppercase tracking-wide">Live Avatar Preview</div>
-          <canvas id="charPreviewCanvas" width="128" height="128" class="border border-slate-800 rounded-lg bg-[#050811] cursor-pointer hover:border-cyan-400 transition" title="Click to test attack flourish"></canvas>
-          <div class="text-[8px] text-slate-500 font-mono">⚡ Click preview to test attack swing</div>
-          
+      <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-2 text-left">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2 flex flex-col items-center justify-center gap-1">
+          <div class="text-[8px] font-cinzel font-bold text-cyan-400 uppercase">Avatar Preview</div>
+          <canvas id="charPreviewCanvas" width="128" height="128" class="border border-slate-800 rounded bg-[#050811] cursor-pointer" title="Tap to flourish"></canvas>
+          <div class="text-[7px] text-slate-500">⚡ Tap to test attack flourish</div>
           <div id="preview-class-name" class="font-cinzel font-bold text-xs text-slate-200">Vanguard Knight</div>
-          <div id="preview-weapon-name" class="text-[9px] text-amber-400 font-mono">Iron Greatsword</div>
-          <div id="preview-skin-name" class="text-[9px] text-purple-300 font-mono">Skin: Sunforged Sovereign</div>
-          <div id="preview-stats-bar" class="w-full grid grid-cols-3 gap-1 bg-black/70 p-1.5 rounded text-[9px] font-mono border border-slate-800 text-slate-300 mt-1">
-            <div>HP: <b id="prev-stat-hp" class="text-rose-400">170</b></div>
-            <div>ATK: <b id="prev-stat-atk" class="text-amber-400">28</b></div>
-            <div>CRIT: <b id="prev-stat-crit" class="text-cyan-400">10%</b></div>
+          <div id="preview-weapon-name" class="text-[8px] text-amber-400 font-mono truncate max-w-full">Iron Greatsword</div>
+          <div id="preview-skin-name" class="text-[8px] text-purple-300 font-mono truncate max-w-full">Sunforged Champion</div>
+          <div id="preview-stats-bar" class="w-full grid grid-cols-3 gap-1 bg-black/70 p-1 rounded text-[8px] font-mono border border-slate-800 text-center text-slate-300">
+            <div>HP:<b id="prev-stat-hp" class="text-rose-400 ml-0.5">170</b></div>
+            <div>ATK:<b id="prev-stat-atk" class="text-amber-400 ml-0.5">28</b></div>
+            <div>CRIT:<b id="prev-stat-crit" class="text-cyan-400 ml-0.5">10%</b></div>
           </div>
         </div>
 
-        <!-- Arsenal & Outfit Customizer Selectors -->
-        <div class="md:col-span-2 flex flex-col gap-2 text-left">
-          <!-- 1. Archetype Buttons -->
+        <div class="md:col-span-2 flex flex-col gap-1.5">
           <div>
-            <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase mb-1">1. Choose Champion Class</div>
-            <div class="grid grid-cols-3 gap-2">
-              <button class="custom-class-btn active py-1.5 px-1.5 bg-slate-950 border-2 border-cyan-400 rounded-lg text-center" data-class="knight">
-                <div class="text-base">🛡️</div>
-                <div class="text-[10px] font-bold text-slate-100">Knight</div>
+            <div class="text-[8px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">1. Champion Class</div>
+            <div class="grid grid-cols-3 gap-1">
+              <button class="custom-class-btn active py-1 px-1 bg-slate-950 border-2 border-cyan-400 rounded-lg text-center" data-class="knight">
+                <div class="text-sm">🛡️</div><div class="text-[9px] font-bold text-slate-100">Knight</div>
               </button>
-              <button class="custom-class-btn py-1.5 px-1.5 bg-slate-950 border-2 border-slate-800 rounded-lg text-center" data-class="assassin">
-                <div class="text-base">🗡️</div>
-                <div class="text-[10px] font-bold text-slate-100">Assassin</div>
+              <button class="custom-class-btn py-1 px-1 bg-slate-950 border-2 border-slate-800 rounded-lg text-center" data-class="assassin">
+                <div class="text-sm">🗡️</div><div class="text-[9px] font-bold text-slate-100">Assassin</div>
               </button>
-              <button class="custom-class-btn py-1.5 px-1.5 bg-slate-950 border-2 border-slate-800 rounded-lg text-center" data-class="mage">
-                <div class="text-base">🔮</div>
-                <div class="text-[10px] font-bold text-slate-100">Archmage</div>
+              <button class="custom-class-btn py-1 px-1 bg-slate-950 border-2 border-slate-800 rounded-lg text-center" data-class="mage">
+                <div class="text-sm">🔮</div><div class="text-[9px] font-bold text-slate-100">Archmage</div>
               </button>
             </div>
           </div>
 
-          <!-- 2. Weapon Dropdown (9 per class) -->
           <div>
-            <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase mb-1">2. Select Weapon Arsenal (9 Choices)</div>
-            <select id="select-weapon" class="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-[11px] text-amber-300 font-mono focus:border-amber-400 outline-none"></select>
+            <div class="text-[8px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">2. Weapon Arsenal (9 choices)</div>
+            <select id="select-weapon" class="w-full bg-slate-950 border border-slate-700 rounded p-1 text-[9px] text-amber-300 font-mono outline-none"></select>
           </div>
 
-          <!-- 3. Skin / Outfit Dropdown (5 unique presets) -->
           <div>
-            <div class="flex justify-between items-center mb-1">
-              <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase">3. Outfit Preset & Custom Dye</div>
+            <div class="flex justify-between items-center mb-0.5">
+              <div class="text-[8px] font-cinzel font-bold text-slate-400 uppercase">3. Outfit Preset & Dyes</div>
               <div class="flex gap-1">
-                <button id="btn-random-dye" class="text-[9px] px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-purple-500/60 rounded text-purple-300">🎲 Random</button>
-                <button id="btn-reset-dye" class="text-[9px] px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-slate-300">↺ Reset</button>
+                <button id="btn-random-dye" class="text-[7px] px-1 py-0.2 bg-slate-800 border border-purple-500/60 rounded text-purple-300">🎲 Rand</button>
+                <button id="btn-reset-dye" class="text-[7px] px-1 py-0.2 bg-slate-800 border border-slate-600 rounded text-slate-300">↺ Reset</button>
               </div>
             </div>
-            <select id="select-skin" class="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-[11px] text-cyan-300 font-mono focus:border-cyan-400 outline-none mb-1.5"></select>
-            
-            <!-- Interactive Color Pickers (Custom Dye) -->
-            <div class="grid grid-cols-4 gap-1.5 bg-black/60 p-1.5 rounded border border-slate-800">
-              <div class="flex flex-col items-center">
-                <span class="text-[8px] text-slate-400 mb-0.5">Primary</span>
-                <input type="color" id="picker-color-primary" value="#f59e0b" class="w-7 h-6 bg-transparent cursor-pointer border border-slate-700 rounded">
-              </div>
-              <div class="flex flex-col items-center">
-                <span class="text-[8px] text-slate-400 mb-0.5">Accent</span>
-                <input type="color" id="picker-color-secondary" value="#fbbf24" class="w-7 h-6 bg-transparent cursor-pointer border border-slate-700 rounded">
-              </div>
-              <div class="flex flex-col items-center">
-                <span class="text-[8px] text-slate-400 mb-0.5">Cape</span>
-                <input type="color" id="picker-color-cape" value="#dc2626" class="w-7 h-6 bg-transparent cursor-pointer border border-slate-700 rounded">
-              </div>
-              <div class="flex flex-col items-center">
-                <span class="text-[8px] text-slate-400 mb-0.5">Visor/Glow</span>
-                <input type="color" id="picker-color-visor" value="#00f0ff" class="w-7 h-6 bg-transparent cursor-pointer border border-slate-700 rounded">
-              </div>
+            <select id="select-skin" class="w-full bg-slate-950 border border-slate-700 rounded p-1 text-[9px] text-cyan-300 font-mono outline-none mb-1"></select>
+            <div class="grid grid-cols-4 gap-1 bg-black/60 p-1 rounded border border-slate-800">
+              <div class="flex flex-col items-center"><span class="text-[6px] text-slate-400">Primary</span><input type="color" id="picker-color-primary" value="#f59e0b" class="w-5 h-4 bg-transparent cursor-pointer rounded"></div>
+              <div class="flex flex-col items-center"><span class="text-[6px] text-slate-400">Accent</span><input type="color" id="picker-color-secondary" value="#fbbf24" class="w-5 h-4 bg-transparent cursor-pointer rounded"></div>
+              <div class="flex flex-col items-center"><span class="text-[6px] text-slate-400">Cape</span><input type="color" id="picker-color-cape" value="#dc2626" class="w-5 h-4 bg-transparent cursor-pointer rounded"></div>
+              <div class="flex flex-col items-center"><span class="text-[6px] text-slate-400">Visor</span><input type="color" id="picker-color-visor" value="#00f0ff" class="w-5 h-4 bg-transparent cursor-pointer rounded"></div>
             </div>
           </div>
 
-          <!-- 4. Accessories & Cape Style -->
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-2 gap-1">
             <div>
-              <div class="text-[9px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">Headwear Crest</div>
-              <select id="select-accessory" class="w-full bg-slate-950 border border-slate-700 rounded p-1 text-[10px] text-slate-200 font-mono">
-                <option value="crown">👑 Sovereign Diadem / Crown</option>
-                <option value="wings">🪽 Valkyrie Winged Crest</option>
-                <option value="horns">🐂 Horns of the Bull</option>
-                <option value="halo">✨ Ascendant Arcane Halo</option>
+              <div class="text-[7px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">Headwear</div>
+              <select id="select-accessory" class="w-full bg-slate-950 border border-slate-700 rounded p-0.5 text-[8px] text-slate-200 font-mono">
+                <option value="crown">👑 Sovereign Diadem</option>
+                <option value="wings">🪽 Valkyrie Wings</option>
+                <option value="horns">🐂 Bull Horns</option>
+                <option value="halo">✨ Arcane Halo</option>
               </select>
             </div>
             <div>
-              <div class="text-[9px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">Cape Dynamics</div>
-              <select id="select-cape" class="w-full bg-slate-950 border border-slate-700 rounded p-1 text-[10px] text-slate-200 font-mono">
-                <option value="grand">Flowing Grand Cloak</option>
-                <option value="sashes">Warrior Dual Sashes</option>
-                <option value="sleek">Compact (No Cape)</option>
+              <div class="text-[7px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">Cape</div>
+              <select id="select-cape" class="w-full bg-slate-950 border border-slate-700 rounded p-0.5 text-[8px] text-slate-200 font-mono">
+                <option value="grand">Flowing Grand</option>
+                <option value="sashes">Dual Sashes</option>
+                <option value="sleek">Compact (None)</option>
               </select>
             </div>
           </div>
 
-          <!-- 5. Starting Relic / Alopecia -->
           <div>
-            <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">5. Starting Degen Perk / Relic</div>
-            <select id="select-perk" class="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-[10px] text-slate-200 font-mono focus:border-cyan-400 outline-none">
-              <option value="alopecia">Alopecia of the Stressed Trader (+40% Crit, +20% Dodge)</option>
-              <option value="diamond_hands">Diamond Hands Gauntlets (100% Knockback Immune, +15 Def)</option>
-              <option value="sugar_addict">Sugar Rush Addict (Start with 4 Sips & +25% Sip Heal)</option>
-              <option value="leverage_maxxer">100x Leverage Maxxer (+30% Attack Damage, -15% Max HP)</option>
+            <div class="text-[7px] font-cinzel font-bold text-slate-400 uppercase mb-0.5">4. Starting Perk</div>
+            <select id="select-perk" class="w-full bg-slate-950 border border-slate-700 rounded p-1 text-[8px] text-slate-200 font-mono outline-none">
+              <option value="alopecia">Alopecia of Stressed Trader (+40% Crit)</option>
+              <option value="diamond_hands">Diamond Hands Gauntlets (+15 Def, Knockback Immune)</option>
+              <option value="sugar_addict">Sugar Rush Addict (Start 4 Sips, +25% Sip Heal)</option>
+              <option value="leverage_maxxer">100x Leverage Maxxer (+30% Atk, -15% Max HP)</option>
             </select>
           </div>
         </div>
       </div>
 
-      <!-- Launch Run Button -->
-      <button id="btn-launch-run" class="w-full py-3 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:scale-[1.01] active:scale-[0.99] font-cinzel font-black text-sm text-slate-950 tracking-wider rounded-xl shadow-xl transition mt-1">
-        LAUNCH SOVEREIGN EXPEDITION
+      <button id="btn-launch-run" class="w-full py-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 active:scale-[0.99] font-cinzel font-black text-xs text-slate-950 tracking-wider rounded-xl shadow transition mt-0.5">
+        LAUNCH EXPEDITION
       </button>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 3: LOADING / MATCHMAKING ======================== -->
   <div id="screen-loading" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-xs w-full bg-slate-900 border-2 border-rose-500 rounded-2xl p-5 text-center shadow-2xl flex flex-col items-center gap-3">
+    <div class="max-w-xs w-full bg-slate-900 border border-rose-500 rounded-2xl p-4 text-center shadow-2xl flex flex-col items-center gap-2">
       <div class="text-3xl animate-spin">⚔️</div>
-      <h2 class="font-cinzel text-base font-bold text-rose-400">CONNECTING TO 50-GLADIATOR NETWORK</h2>
-      <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-700">
-        <div id="matchmaking-progress" class="h-full bg-gradient-to-r from-rose-600 to-amber-500 w-0 transition-all duration-200"></div>
+      <h2 class="font-cinzel text-xs font-bold text-rose-400">CONNECTING TO 50-GLADIATOR NETWORK</h2>
+      <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-700">
+        <div id="matchmaking-progress" class="h-full bg-gradient-to-r from-rose-600 to-amber-500 w-0"></div>
       </div>
-      <div class="text-xs font-mono text-amber-400 font-bold">Gladiators in Lobby: <span id="matchmaking-count">1</span> / 50</div>
-      <div id="matchmaking-roster" class="w-full h-24 bg-slate-950 border border-slate-800 rounded p-1.5 text-[10px] font-mono text-slate-400 overflow-y-auto text-left flex flex-col gap-0.5"></div>
-      <button id="btn-cancel-matchmaking" class="px-3 py-1 bg-slate-800 border border-slate-600 text-xs font-bold text-slate-300 rounded hover:text-white">Cancel</button>
+      <div class="text-[10px] font-mono text-amber-400 font-bold">Lobby: <span id="matchmaking-count">1</span> / 50</div>
+      <div id="matchmaking-roster" class="w-full h-16 bg-slate-950 border border-slate-800 rounded p-1 text-[8px] font-mono text-slate-400 overflow-y-auto text-left flex flex-col gap-0.5"></div>
+      <button id="btn-cancel-matchmaking" class="px-3 py-0.5 bg-slate-800 border border-slate-600 text-[10px] font-bold text-slate-300 rounded">Cancel</button>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 4: ACCESSIBLE PAUSE MENU ======================== -->
   <div id="screen-paused" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-xs w-full bg-slate-900 border-2 border-cyan-500 rounded-2xl p-5 text-center shadow-2xl flex flex-col items-center gap-4">
-      <div class="text-3xl">⏸️</div>
-      <h2 class="font-cinzel text-lg font-bold text-cyan-400">EXPEDITION PAUSED</h2>
-      <p class="text-[10px] text-slate-400">Simulation time frozen. Input states preserved.</p>
-      <div class="flex flex-col gap-2 w-full">
-        <button id="btn-pause-resume" class="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 font-cinzel font-bold text-xs text-black rounded-lg shadow hover:opacity-90 transition">Resume Game (ESC)</button>
-        <button id="btn-pause-audio" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 font-cinzel font-bold text-xs text-slate-200 rounded-lg transition">Toggle Audio (🔊)</button>
-        <button id="btn-pause-menu" class="w-full py-2 bg-rose-950 hover:bg-rose-900 border border-rose-700 font-cinzel font-bold text-xs text-rose-300 rounded-lg transition">Abandon Expedition</button>
+    <div class="max-w-xs w-full bg-slate-900 border border-cyan-500 rounded-2xl p-4 text-center shadow-2xl flex flex-col items-center gap-2.5">
+      <div class="text-2xl">⏸️</div>
+      <h2 class="font-cinzel text-sm font-bold text-cyan-400">EXPEDITION PAUSED</h2>
+      <div class="flex flex-col gap-1.5 w-full">
+        <button id="btn-pause-resume" class="w-full py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 font-cinzel font-bold text-xs text-black rounded shadow">Resume (ESC)</button>
+        <button id="btn-pause-audio" class="w-full py-1.5 bg-slate-800 border border-slate-600 font-cinzel font-bold text-xs text-slate-200 rounded">Toggle Audio (🔊)</button>
+        <button id="btn-pause-menu" class="w-full py-1.5 bg-rose-950 border border-rose-700 font-cinzel font-bold text-xs text-rose-300 rounded">Abandon Expedition</button>
       </div>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 5: INFUSION / INVENTORY ======================== -->
-  <div id="screen-infusion" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-md w-full bg-slate-900 border-2 border-cyan-500 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-      <div class="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-        <div class="font-cinzel font-bold text-cyan-400 text-xs flex items-center gap-1.5">
-          <span>🎒</span> <span>SOVEREIGN INVENTORY & GEAR</span>
-        </div>
-        <button id="btn-close-inv" class="text-slate-400 hover:text-rose-400 font-bold text-base">✕</button>
+  <div id="screen-infusion" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-3">
+    <div class="max-w-md w-full bg-slate-900 border border-cyan-500 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div class="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+        <div class="font-cinzel font-bold text-cyan-400 text-xs flex items-center gap-1"><span>🎒</span><span>INVENTORY & GEAR</span></div>
+        <button id="btn-close-inv" class="text-slate-400 hover:text-rose-400 font-bold text-sm">✕</button>
       </div>
-      <div class="p-4 flex flex-col gap-3 text-xs">
-        <div class="grid grid-cols-4 gap-2 bg-slate-950 p-2.5 rounded border border-slate-800 text-[11px]">
-          <div>Class: <b id="inv-stat-class" class="text-cyan-300">Knight</b></div>
-          <div>HP: <b id="inv-stat-hp" class="text-rose-400">170</b></div>
-          <div>MP: <b id="inv-stat-mp" class="text-sky-400">40</b></div>
-          <div>Crit: <b id="inv-stat-crit" class="text-amber-400">10%</b></div>
+      <div class="p-3 flex flex-col gap-2 text-xs">
+        <div class="grid grid-cols-4 gap-1 bg-slate-950 p-1.5 rounded border border-slate-800 text-[9px]">
+          <div>Class:<b id="inv-stat-class" class="text-cyan-300 ml-0.5">Knight</b></div>
+          <div>HP:<b id="inv-stat-hp" class="text-rose-400 ml-0.5">170</b></div>
+          <div>MP:<b id="inv-stat-mp" class="text-sky-400 ml-0.5">40</b></div>
+          <div>Crit:<b id="inv-stat-crit" class="text-amber-400 ml-0.5">10%</b></div>
         </div>
-        <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase">Equipped Weapon & Outfit</div>
-        <div class="grid grid-cols-2 gap-2" id="equipped-gear-slots"></div>
-        <div class="text-[10px] font-cinzel font-bold text-slate-400 uppercase mt-1">Alopecia & Active Artifact Affixes</div>
-        <div id="inv-affixes-list" class="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] text-slate-300 flex flex-col gap-1"></div>
+        <div class="text-[8px] font-cinzel font-bold text-slate-400 uppercase">Equipped Weapon & Outfit</div>
+        <div class="grid grid-cols-2 gap-1.5" id="equipped-gear-slots"></div>
+        <div class="text-[8px] font-cinzel font-bold text-slate-400 uppercase">Active Artifact Affixes</div>
+        <div id="inv-affixes-list" class="bg-slate-950 p-1.5 rounded border border-slate-800 text-[9px] text-slate-300 flex flex-col gap-0.5"></div>
       </div>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 6: GLOBAL TELEMETRY & ENHANCED HOF ======================== -->
-  <div id="screen-hof" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-2xl w-full bg-slate-900 border-2 border-amber-500 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-      <div class="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-        <div class="font-cinzel font-bold text-amber-400 text-xs flex items-center gap-2">
-          <span>🏆</span> <span>DEGEN TELEMETRY & HALL OF FAME LEADERBOARD</span>
-        </div>
-        <button id="btn-close-hof" class="text-slate-400 hover:text-rose-400 font-bold text-base">✕</button>
+  <div id="screen-hof" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-3">
+    <div class="max-w-lg w-full bg-slate-900 border border-amber-500 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+        <div class="font-cinzel font-bold text-amber-400 text-xs flex items-center gap-1"><span>🏆</span><span>TELEMETRY & LEADERBOARD</span></div>
+        <button id="btn-close-hof" class="text-slate-400 hover:text-rose-400 font-bold text-sm">✕</button>
       </div>
-
-      <div class="flex border-b border-slate-800 bg-slate-950/80 text-[11px] font-cinzel">
-        <button id="tab-btn-leaderboard" class="flex-1 py-2 border-b-2 border-amber-400 text-amber-300 font-bold">Top 10 Leaderboard</button>
-        <button id="tab-btn-lifetime" class="flex-1 py-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">Lifetime Telemetry</button>
-        <button id="tab-btn-recent" class="flex-1 py-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">Recent Run Breakdown</button>
+      <div class="flex border-b border-slate-800 bg-slate-950/80 text-[9px] font-cinzel">
+        <button id="tab-btn-leaderboard" class="flex-1 py-1 border-b-2 border-amber-400 text-amber-300 font-bold">Leaderboard</button>
+        <button id="tab-btn-lifetime" class="flex-1 py-1 border-b-2 border-transparent text-slate-400">Lifetime Stats</button>
+        <button id="tab-btn-recent" class="flex-1 py-1 border-b-2 border-transparent text-slate-400">Recent Run</button>
       </div>
-
-      <div class="p-4 overflow-y-auto flex flex-col gap-4">
+      <div class="p-3 overflow-y-auto flex flex-col gap-2.5">
         <div id="tab-content-leaderboard">
-          <table class="w-full text-left text-[11px]">
-            <thead class="bg-slate-950 text-slate-400 uppercase text-[9px] font-cinzel">
-              <tr>
-                <th class="p-1.5">#</th>
-                <th class="p-1.5">Date</th>
-                <th class="p-1.5">Champion</th>
-                <th class="p-1.5">Mode</th>
-                <th class="p-1.5">Result</th>
-                <th class="p-1.5 text-right">Score</th>
-              </tr>
+          <table class="w-full text-left text-[9px]">
+            <thead class="bg-slate-950 text-slate-400 uppercase text-[8px] font-cinzel">
+              <tr><th class="p-1">#</th><th class="p-1">Date</th><th class="p-1">Champ</th><th class="p-1">Mode</th><th class="p-1">Result</th><th class="p-1 text-right">Score</th></tr>
             </thead>
             <tbody id="hof-table-body" class="divide-y divide-slate-800 font-mono text-slate-300"></tbody>
           </table>
         </div>
-
         <div id="tab-content-lifetime" style="display: none;">
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs">
-            <div><span class="text-slate-400">Total Runs:</span> <b id="stat-tot-runs" class="text-cyan-300">0</b></div>
-            <div><span class="text-slate-400">Total Kills:</span> <b id="stat-tot-kills" class="text-rose-400">0</b></div>
-            <div><span class="text-slate-400">Sips Consumed:</span> <b id="stat-tot-sips" class="text-emerald-400">0</b></div>
-            <div><span class="text-slate-400">Sugar Overdoses:</span> <b id="stat-tot-overdoses" class="text-amber-400">0</b></div>
-            <div><span class="text-slate-400">Gold Scrounged:</span> <b id="stat-tot-gold" class="text-amber-300">0</b></div>
-            <div><span class="text-slate-400">Total Damage:</span> <b id="stat-tot-dmg" class="text-purple-300">0</b></div>
-            <div><span class="text-slate-400">Damage Mitigated:</span> <b id="stat-tot-mitigated" class="text-sky-300">0</b></div>
-            <div><span class="text-slate-400">Highest Hit:</span> <b id="stat-max-hit" class="text-yellow-300">0</b></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-950 p-2 rounded border border-slate-800 text-[9px]">
+            <div><span class="text-slate-400">Runs:</span> <b id="stat-tot-runs" class="text-cyan-300">0</b></div>
+            <div><span class="text-slate-400">Kills:</span> <b id="stat-tot-kills" class="text-rose-400">0</b></div>
+            <div><span class="text-slate-400">Sips:</span> <b id="stat-tot-sips" class="text-emerald-400">0</b></div>
+            <div><span class="text-slate-400">Overdoses:</span> <b id="stat-tot-overdoses" class="text-amber-400">0</b></div>
+            <div><span class="text-slate-400">Gold:</span> <b id="stat-tot-gold" class="text-amber-300">0</b></div>
+            <div><span class="text-slate-400">Damage:</span> <b id="stat-tot-dmg" class="text-purple-300">0</b></div>
+            <div><span class="text-slate-400">Mitigated:</span> <b id="stat-tot-mitigated" class="text-sky-300">0</b></div>
+            <div><span class="text-slate-400">Max Hit:</span> <b id="stat-max-hit" class="text-yellow-300">0</b></div>
           </div>
         </div>
-
         <div id="tab-content-recent" style="display: none;">
-          <div id="recent-run-details" class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs flex flex-col gap-2">
-            <div class="text-slate-400 italic">No run recorded yet in this session. Complete a run to see deep telemetry.</div>
+          <div id="recent-run-details" class="bg-slate-950 p-2 rounded border border-slate-800 text-[9px] flex flex-col gap-1">
+            <div class="text-slate-400 italic">No run recorded yet.</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 7: GAME OVER / VICTORY ======================== -->
   <div id="screen-gameover" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-4">
-    <div class="max-w-sm w-full bg-slate-900 border-2 rounded-2xl p-5 text-center shadow-2xl flex flex-col items-center gap-3">
-      <div id="gameover-icon" class="text-4xl">💀</div>
-      <h2 id="gameover-title" class="font-cinzel text-xl font-black tracking-wider text-rose-400">LIQUIDATED!</h2>
-      <p id="gameover-subtitle" class="text-[11px] text-slate-300">Solvency reached zero.</p>
-      <div class="w-full bg-slate-950 p-2.5 rounded border border-slate-800 text-[11px] flex flex-col gap-1 text-left">
-        <div class="flex justify-between"><span class="text-slate-400">Mode:</span> <b id="go-stat-mode" class="text-slate-200">Story</b></div>
+    <div class="max-w-xs w-full bg-slate-900 border border-slate-700 rounded-2xl p-4 text-center shadow-2xl flex flex-col items-center gap-2">
+      <div id="gameover-icon" class="text-3xl">💀</div>
+      <h2 id="gameover-title" class="font-cinzel text-base font-black tracking-wider text-rose-400">LIQUIDATED!</h2>
+      <p id="gameover-subtitle" class="text-[9px] text-slate-300">Solvency reached zero.</p>
+      <div class="w-full bg-slate-950 p-2 rounded border border-slate-800 text-[9px] flex flex-col gap-0.5 text-left">
+        <div class="flex justify-between"><span class="text-slate-400">Mode:</span> <b id="go-stat-mode">Story</b></div>
         <div class="flex justify-between"><span class="text-slate-400">Kills:</span> <b id="go-stat-kills" class="text-rose-400">0</b></div>
-        <div class="flex justify-between"><span class="text-slate-400">Sips Consumed:</span> <b id="go-stat-sips" class="text-emerald-400">0</b></div>
-        <div class="flex justify-between"><span class="text-slate-400">Sugar Overdoses:</span> <b id="go-stat-overdoses" class="text-amber-400">0</b></div>
-        <div class="flex justify-between"><span class="text-slate-400">Damage Mitigated:</span> <b id="go-stat-mitigated" class="text-sky-300">0</b></div>
-        <div class="flex justify-between"><span class="text-slate-400">Cause of Death:</span> <b id="go-stat-cause" class="text-red-400">Solvency Loss</b></div>
-        <div class="flex justify-between border-t border-slate-800 pt-1 font-bold"><span>Final Degen Score:</span> <b id="go-stat-score" class="text-amber-300">0</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Sips:</span> <b id="go-stat-sips" class="text-emerald-400">0</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Overdoses:</span> <b id="go-stat-overdoses" class="text-amber-400">0</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Mitigated:</span> <b id="go-stat-mitigated" class="text-sky-300">0</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Cause:</span> <b id="go-stat-cause" class="text-red-400">Solvency Loss</b></div>
+        <div class="flex justify-between border-t border-slate-800 pt-0.5 font-bold"><span>Score:</span> <b id="go-stat-score" class="text-amber-300">0</b></div>
       </div>
       <div class="flex gap-2 w-full">
-        <button id="btn-gameover-restart" class="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 font-cinzel font-bold text-xs text-black rounded-lg shadow hover:opacity-90 transition">Play Again</button>
-        <button id="btn-gameover-menu" class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 font-cinzel font-bold text-xs text-slate-300 rounded-lg transition">Main Menu</button>
+        <button id="btn-gameover-restart" class="flex-1 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 font-cinzel font-bold text-xs text-black rounded">Play Again</button>
+        <button id="btn-gameover-menu" class="flex-1 py-1 bg-slate-800 border border-slate-600 font-cinzel font-bold text-xs text-slate-300 rounded">Main Menu</button>
       </div>
     </div>
   </div>
 
-  <!-- ======================== SCREEN 8: DEGEN CODEX GUIDE MODAL ======================== -->
-  <div id="screen-codex" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-3 sm:p-4 overflow-y-auto">
-    <div class="max-w-xl w-full bg-slate-900 border-2 border-cyan-500/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-      <div class="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-        <div class="font-cinzel font-bold text-cyan-400 text-xs flex items-center gap-2">
-          <span>📖</span> <span>SOVEREIGN DEGEN CODEX & TACTICAL MANUAL</span>
-        </div>
-        <button id="btn-close-codex" class="text-slate-400 hover:text-rose-400 font-bold text-base">✕</button>
+  <div id="screen-codex" style="display: none;" class="screen-overlay absolute inset-0 z-50 flex-col items-center justify-center p-3 overflow-y-auto">
+    <div class="max-w-md w-full bg-slate-900 border border-cyan-500/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-3 py-1.5 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+        <div class="font-cinzel font-bold text-cyan-400 text-xs flex items-center gap-1"><span>📖</span><span>DEGEN CODEX & MANUAL</span></div>
+        <button id="btn-close-codex" class="text-slate-400 hover:text-rose-400 font-bold text-sm">✕</button>
       </div>
-
-      <div class="p-4 overflow-y-auto flex flex-col gap-3 text-xs leading-relaxed">
-        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-          <div class="font-cinzel font-bold text-amber-400 text-[11px] mb-1">🎮 CONTROLS & MOBILITY</div>
-          <p class="text-slate-300 text-[10px]">
-            • <b>Movement:</b> WASD or Arrow Keys, or on-screen Virtual Joystick (left half of screen).<br>
-            • <b>Attack (J / Left Click):</b> Strike or fire toward cursor. Consumes 15 Stamina.<br>
-            • <b>Heavy Skill (K):</b> Class special attack. Knight Whirlwind, Assassin Shadow Blink, Archmage Cosmic Nova.<br>
-            • <b>Dodge Roll (L):</b> Somersault roll granting <b>full invulnerability frames (I-frames)</b>. Dodges stomps & projectiles!<br>
-            • <b>Sugar Sip (H):</b> Take an energy sip to heal HP/MP and surge Sugar meter.
+      <div class="p-3 overflow-y-auto flex flex-col gap-2 text-xs">
+        <div class="bg-slate-950 p-2 rounded border border-slate-800">
+          <div class="font-cinzel font-bold text-amber-400 text-[9px] mb-0.5">🎮 CONTROLS & MOBILITY</div>
+          <p class="text-slate-300 text-[8px] leading-normal">
+            • <b>Movement:</b> Virtual Joystick (left 50%) or WASD/Arrows.<br>
+            • <b>Attack (J):</b> Strike / fire. Auto-targets nearest hostile if tapping on mobile! Consumes 15 ST.<br>
+            • <b>Heavy Skill (K):</b> Whirlwind / Blink / Nova (15-25 MP, 30 ST).<br>
+            • <b>Dodge Roll (L):</b> Somersault with full I-frames.<br>
+            • <b>Energy Sip (H):</b> Consume sip to heal and surge Sugar meter.
           </p>
         </div>
-
-        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-          <div class="font-cinzel font-bold text-cyan-400 text-[11px] mb-1">🧪 THE SUGAR & AURA METER</div>
-          <p class="text-slate-300 text-[10px]">
-            • <b>Normal (0-49%):</b> Standard combat attributes.<br>
-            • <b>Sweet Spot (50-79%):</b> +20% Move Speed and +50% Stamina Regeneration rate!<br>
-            • <b>Diabetic Rage (80-100%):</b> <b>2.5x ATTACK DAMAGE & ZERO STAMINA COST</b>, but burns -3 HP/s!<br>
-            • <b>Sugar Crash:</b> After dropping from an overdose, you suffer a 2.5s Sugar Crash where stamina recovery is paused.
+        <div class="bg-slate-950 p-2 rounded border border-slate-800">
+          <div class="font-cinzel font-bold text-cyan-400 text-[9px] mb-0.5">🧪 SUGAR & AURA SYSTEM</div>
+          <p class="text-slate-300 text-[8px] leading-normal">
+            • <b>Normal (0-49%):</b> Standard stats.<br>
+            • <b>Sweet Spot (50-79%):</b> +20% Speed & +50% Stamina Regen.<br>
+            • <b>Diabetic Rage (80-100%):</b> 2.5x Damage & 0 Stamina cost, burns -3 HP/s.<br>
+            • <b>Sugar Crash:</b> After overdose, 2.5s pause on stamina recovery.
           </p>
         </div>
-
-        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-          <div class="font-cinzel font-bold text-rose-400 text-[11px] mb-1">🛡️ ENEMY TACTICS & BESTIARY</div>
-          <p class="text-slate-300 text-[10px]">
-            • <b>Shield Brute:</b> Heavy frontal tower shield blocks 70% damage. <b>Dodge roll behind them for backstabs!</b><br>
-            • <b>Chad Golem:</b> Shows a laser aim line before charging. Sidestep to evade!<br>
-            • <b>Abyssal Titan (Boss):</b> Radial ground stomps emit expanding shockwaves. <b>Dodge Roll (L) through the shockwave!</b>
-          </p>
-        </div>
-
-        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
-          <div class="font-cinzel font-bold text-purple-400 text-[11px] mb-1">🏰 FLOOR INFUSION PROGRESSION</div>
-          <p class="text-slate-300 text-[10px]">
-            Every story floor cleared awards a permanent <b>Sovereign Infusion (+15 Max HP, +5 Max MP, +3 ATK, +1 DEF, 40% HP restore, +1 Sip refilled)</b> so your power rises along with the dungeon depths!
+        <div class="bg-slate-950 p-2 rounded border border-slate-800">
+          <div class="font-cinzel font-bold text-rose-400 text-[9px] mb-0.5">🛡️ TACTICAL TIPS</div>
+          <p class="text-slate-300 text-[8px] leading-normal">
+            • <b>Shield Brute:</b> Tower shield blocks 70% damage. Roll behind for backstabs!<br>
+            • <b>Chad Golem:</b> Laser aim telegraphs charge. Sidestep out of path!<br>
+            • <b>Abyssal Titan (Boss):</b> Radial ground stomps emit shockwaves. Roll through them!
           </p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== JAVASCRIPT GAME ENGINE ==================== -->
+  <!-- JAVASCRIPT GAME ENGINE -->
   <script>
+
 
     /* ================================================================
        1. WEB AUDIO & HAPTIC FEEDBACK (Procedural & Robust)
@@ -1163,8 +1039,7 @@
             ctx.beginPath();
             ctx.strokeStyle = trailColor;
             ctx.lineWidth = Math.max(1.5, 4.5 * (1 - swingNorm * 0.55)); // tapering arc
-            ctx.shadowColor = trailColor;
-            ctx.shadowBlur = 12;
+            // shadowColor removed for 60 FPS
             ctx.arc(0, 0, 22, -Math.PI / 4, swingRot);
             ctx.stroke();
             ctx.restore();
@@ -1689,14 +1564,57 @@
         this.touchMovement = { active: false, x: 0, y: 0 };
         this.touchJoystick = { startX: 0, startY: 0, touchId: null };
 
+        this.cacheDOM();
+        this.lastHUD = { hp: -1, maxHp: -1, mp: -1, stam: -1, sugar: -1, aura: '', sips: -1, floor: '', bossHp: -1 };
+        this.lastBossHp = -1;
+        this.lastStormSec = -1;
+        this.toastTimer = null;
+        this.boundLoop = this.loop.bind(this);
+
         this.initDOM();
         this.populateArsenalAndSkins();
         this.initTouchControls();
         this.setState(STATES.MAIN_MENU);
 
-        // START CENTRAL PERSISTENT RAF LOOP (Single central loop prevents freeze)
+        // START CENTRAL PERSISTENT RAF LOOP (Target locked 60 FPS)
         this.loopRunning = true;
-        requestAnimationFrame(() => this.loop());
+        requestAnimationFrame(this.boundLoop);
+      }
+
+      cacheDOM() {
+        this.dom = {
+          hpBar: document.getElementById('hp-bar'),
+          hpText: document.getElementById('ui-hp-text'),
+          mpBar: document.getElementById('mp-bar'),
+          stamBar: document.getElementById('stam-bar'),
+          sugarText: document.getElementById('ui-sugar-text'),
+          auraText: document.getElementById('ui-aura-state'),
+          sugarBadge: document.getElementById('ui-sugar-badge'),
+          sipsCountTop: document.getElementById('ui-sips-count-top'),
+          floatSipBadge: document.getElementById('float-sip-badge'),
+          floorText: document.getElementById('ui-floor-text'),
+          bossOverlay: document.getElementById('boss-hud-overlay'),
+          bossHpFill: document.getElementById('boss-hp-fill'),
+          bossHpText: document.getElementById('boss-hp-text'),
+          bossName: document.getElementById('boss-name'),
+          bossPhase: document.getElementById('boss-phase-badge'),
+          gameToast: document.getElementById('game-toast'),
+          combatLog: document.getElementById('combat-log'),
+          arenaKillfeed: document.getElementById('arena-killfeed'),
+          arenaAlive: document.getElementById('ui-arena-alive'),
+          gladiatorsLeft: document.getElementById('ui-gladiators-left')
+        };
+      }
+
+      showToast(msg, colorClass = 'text-cyan-300 border-cyan-400/60') {
+        if (!this.dom || !this.dom.gameToast) return;
+        this.dom.gameToast.className = `absolute top-7 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-slate-950/90 border ${colorClass} text-[9px] font-bold rounded-full shadow z-25 pointer-events-none font-cinzel text-center whitespace-nowrap`;
+        this.dom.gameToast.innerHTML = msg;
+        this.dom.gameToast.style.display = 'block';
+        clearTimeout(this.toastTimer);
+        this.toastTimer = setTimeout(() => {
+          if (this.dom && this.dom.gameToast) this.dom.gameToast.style.display = 'none';
+        }, 2200);
       }
 
       setState(newState) {
@@ -2787,6 +2705,26 @@
       playerAttack() {
         if (!this.player || this.player.hp <= 0 || this.player.attackCd > 0) return;
 
+        // Auto-Aim Assist on Mobile: If not manually dragging direction, lock onto nearest hostile in reach
+        if (!this.touchMovement.active || (this.touchMovement.x === 0 && this.touchMovement.y === 0)) {
+          let nearestDist = 260;
+          let targetE = null;
+          for (let i = 0; i < this.enemies.length; i++) {
+            const e = this.enemies[i];
+            if (e.dead) continue;
+            const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
+            if (d < nearestDist) {
+              nearestDist = d;
+              targetE = e;
+            }
+          }
+          if (targetE) {
+            const aimA = Math.atan2(targetE.y - this.player.y, targetE.x - this.player.x);
+            this.player.facing = { x: Math.cos(aimA), y: Math.sin(aimA) };
+            this.player.facingAngle = aimA;
+          }
+        }
+
         if (this.player.auraState !== 'DIABETIC_RAGE') {
           if (this.player.stamina < 15) {
             this.addCombatLog('⚠️ Need 15 Stamina to attack!', 'text-amber-400');
@@ -3343,9 +3281,10 @@
          ================================================================ */
       loop() {
         const now = performance.now();
-        // Strict delta-time (dt) normalization (120Hz mobile fix)
-        const dt = Math.min(0.05, Math.max(0.001, (now - this.lastTime) / 1000));
+        // Strict 60 FPS delta-time normalization (prevents stutter on 90Hz/120Hz mobile)
+        const rawDt = (now - this.lastTime) / 1000;
         this.lastTime = now;
+        const dt = Math.min(0.033, Math.max(0.001, rawDt));
 
         if (this.previewFlourishTimer > 0) {
           this.previewFlourishTimer -= dt;
@@ -3367,7 +3306,7 @@
         }
 
         if (this.loopRunning) {
-          requestAnimationFrame(() => this.loop());
+          requestAnimationFrame(this.boundLoop || (() => this.loop()));
         }
       }
 
@@ -3376,9 +3315,6 @@
 
         if (this.spawnGraceTimer > 0) {
           this.spawnGraceTimer -= dt;
-          document.getElementById('grace-period-banner').style.display = 'block';
-        } else {
-          document.getElementById('grace-period-banner').style.display = 'none';
         }
 
         // Synchronize player facing if moving
@@ -3779,20 +3715,7 @@
           }
         }
 
-        // ================= SPATIAL GRID AI PARTITIONING (128x128 Cells) =================
-        const CELL_SIZE = 128;
-        const grid = new Map();
-        const getCellKey = (cx, cy) => `${cx}_${cy}`;
-
-        for (let i = 0; i < this.enemies.length; i++) {
-          const e = this.enemies[i];
-          if (e.dead) continue;
-          const cx = Math.floor(e.x / CELL_SIZE);
-          const cy = Math.floor(e.y / CELL_SIZE);
-          const key = getCellKey(cx, cy);
-          if (!grid.has(key)) grid.set(key, []);
-          grid.get(key).push(e);
-        }
+        // ================= SPATIAL PARTITIONING (ZERO GC ALLOCATIONS) =================
 
         for (let i = 0; i < this.enemies.length; i++) {
           const enemy = this.enemies[i];
@@ -3847,7 +3770,6 @@
             let target = this.player;
 
             if (this.gameMode === 'arena') {
-              // Spatial Grid Aggro: Restrict gladiator targeting to entities within an 8-tile radius (256px)
               const MAX_AGGRO_DIST = 8 * TILE_SIZE;
               let closestDist = MAX_AGGRO_DIST;
               let closestEntity = null;
@@ -3858,25 +3780,13 @@
                 closestEntity = this.player;
               }
 
-              const ecx = Math.floor(enemy.x / CELL_SIZE);
-              const ecy = Math.floor(enemy.y / CELL_SIZE);
-
-              // Search neighboring cells within 8-tile radius
-              for (let ox = -2; ox <= 2; ox++) {
-                for (let oy = -2; oy <= 2; oy++) {
-                  const key = getCellKey(ecx + ox, ecy + oy);
-                  const cellEnemies = grid.get(key);
-                  if (cellEnemies) {
-                    for (let j = 0; j < cellEnemies.length; j++) {
-                      const other = cellEnemies[j];
-                      if (!other.dead && other !== enemy && other.faction !== enemy.faction) {
-                        const d = Math.hypot(other.x - enemy.x, other.y - enemy.y);
-                        if (d <= MAX_AGGRO_DIST && d < closestDist) {
-                          closestDist = d;
-                          closestEntity = other;
-                        }
-                      }
-                    }
+              for (let j = 0; j < this.enemies.length; j++) {
+                const other = this.enemies[j];
+                if (!other.dead && other !== enemy && other.faction !== enemy.faction) {
+                  const d = Math.hypot(other.x - enemy.x, other.y - enemy.y);
+                  if (d <= MAX_AGGRO_DIST && d < closestDist) {
+                    closestDist = d;
+                    closestEntity = other;
                   }
                 }
               }
@@ -4414,10 +4324,14 @@
         this.cam.x = Math.max(0, Math.min(WORLD_SIZE - 480, this.cam.x));
         this.cam.y = Math.max(0, Math.min(WORLD_SIZE - 480, this.cam.y));
 
-        if (this.activeBoss) {
-          const bPct = Math.max(0, (this.activeBoss.hp / this.activeBoss.maxHp) * 100);
-          document.getElementById('boss-hp-fill').style.width = `${bPct}%`;
-          document.getElementById('boss-hp-text').innerText = `${Math.ceil(this.activeBoss.hp)} / ${this.activeBoss.maxHp} HP`;
+        if (this.activeBoss && this.dom && this.dom.bossHpFill) {
+          const bHp = Math.ceil(this.activeBoss.hp);
+          if (this.lastBossHp !== bHp) {
+            this.lastBossHp = bHp;
+            const bPct = Math.max(0, (this.activeBoss.hp / this.activeBoss.maxHp) * 100);
+            this.dom.bossHpFill.style.width = `${bPct}%`;
+            this.dom.bossHpText.textContent = `${bHp} / ${this.activeBoss.maxHp} HP`;
+          }
         }
 
         this.updateHUD();
@@ -4485,8 +4399,9 @@
             const py = this.dungeon.exitPos.y - this.cam.y;
             this.ctx.save();
             this.ctx.fillStyle = '#00f0ff';
-            this.ctx.shadowColor = '#00f0ff';
-            this.ctx.shadowBlur = 15;
+            this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+            this.ctx.lineWidth = 3;
+            this.ctx.stroke();
             this.ctx.beginPath();
             this.ctx.arc(px, py, 12 + Math.sin(this.animTime * 6) * 2, 0, Math.PI * 2);
             this.ctx.fill();
@@ -4500,8 +4415,7 @@
             this.ctx.save();
             this.ctx.strokeStyle = '#f59e0b';
             this.ctx.lineWidth = 2;
-            this.ctx.shadowColor = '#fbbf24';
-            this.ctx.shadowBlur = 12;
+            // shadowBlur removed
             this.ctx.beginPath();
             this.ctx.arc(bx, by, (1 - sb.life) * 45, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -4513,8 +4427,7 @@
             this.ctx.save();
             this.ctx.strokeStyle = '#f59e0b';
             this.ctx.lineWidth = 4;
-            this.ctx.shadowColor = '#f59e0b';
-            this.ctx.shadowBlur = 12;
+            // shadowBlur removed
             this.ctx.beginPath();
             this.ctx.arc(sw.x - this.cam.x, sw.y - this.cam.y, sw.radius, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -4526,8 +4439,7 @@
             this.ctx.save();
             this.ctx.strokeStyle = '#a855f7';
             this.ctx.lineWidth = 3;
-            this.ctx.shadowColor = '#c084fc';
-            this.ctx.shadowBlur = 15;
+            // shadowBlur removed
             this.ctx.beginPath();
             this.ctx.arc(this.stormCenter.x - this.cam.x, this.stormCenter.y - this.cam.y, this.stormRadius, 0, Math.PI * 2);
             this.ctx.stroke();
@@ -4550,16 +4462,14 @@
               this.ctx.beginPath();
               this.ctx.strokeStyle = '#00f0ff';
               this.ctx.lineWidth = 6;
-              this.ctx.shadowColor = '#00f0ff';
-              this.ctx.shadowBlur = 24;
+              // shadowBlur removed
               this.ctx.arc(ws.x - this.cam.x, ws.y - this.cam.y, ws.radius, 0, Math.PI * 2);
               this.ctx.stroke();
 
               this.ctx.beginPath();
               this.ctx.strokeStyle = '#ffffff';
               this.ctx.lineWidth = 2.5;
-              this.ctx.shadowColor = '#ffffff';
-              this.ctx.shadowBlur = 12;
+              // shadowBlur removed
               this.ctx.arc(ws.x - this.cam.x, ws.y - this.cam.y, ws.radius - 2, 0, Math.PI * 2);
               this.ctx.stroke();
             }
@@ -4568,8 +4478,7 @@
             this.ctx.beginPath();
             this.ctx.strokeStyle = ws.color;
             this.ctx.lineWidth = 10;
-            this.ctx.shadowColor = ws.color;
-            this.ctx.shadowBlur = 22;
+            // shadowBlur removed
             this.ctx.arc(ws.x - this.cam.x, ws.y - this.cam.y, ws.radius, startA, endA);
             this.ctx.stroke();
 
@@ -4587,8 +4496,7 @@
             this.ctx.globalAlpha = Math.max(0, alpha * 0.95);
             this.ctx.strokeStyle = '#ffffff';
             this.ctx.lineWidth = 2.5;
-            this.ctx.shadowColor = '#ffffff';
-            this.ctx.shadowBlur = 10;
+            // shadowBlur removed
             this.ctx.arc(ws.x - this.cam.x, ws.y - this.cam.y, ws.radius, Math.max(startA, endA - 0.35), endA);
             this.ctx.stroke();
 
@@ -4602,13 +4510,11 @@
             const py = pt.y - this.cam.y;
             if (pt.isStoneDebris) {
               this.ctx.fillStyle = pt.color;
-              this.ctx.shadowColor = '#475569';
-              this.ctx.shadowBlur = 4;
+              // shadowBlur removed
               this.ctx.fillRect(px, py, pt.size || 3.5, pt.size || 3.5);
             } else if (pt.isBloodDroplet) {
               this.ctx.fillStyle = pt.color;
-              this.ctx.shadowColor = pt.color;
-              this.ctx.shadowBlur = 4;
+              // shadowBlur removed
               this.ctx.beginPath();
               this.ctx.arc(px, py, pt.size || 3.0, 0, Math.PI * 2);
               this.ctx.fill();
@@ -4693,93 +4599,47 @@
             this.ctx.save();
 
             if (p.type === 'fireball' || p.color === '#f97316' || p.color === '#ef4444') {
-              // FIREBALL: Expanding fiery spheres with radial flame particles trailing behind
               const curRadius = p.radius * (1 + (p.age || 0) * 0.35);
-              const fGrad = this.ctx.createRadialGradient(px, py, 1, px, py, curRadius * 1.5);
-              fGrad.addColorStop(0, '#ffffff');
-              fGrad.addColorStop(0.25, '#fef08a');
-              fGrad.addColorStop(0.65, '#f97316');
-              fGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-              this.ctx.fillStyle = fGrad;
-              this.ctx.shadowColor = '#f97316';
-              this.ctx.shadowBlur = 20;
+              this.ctx.fillStyle = 'rgba(249, 115, 22, 0.3)';
               this.ctx.beginPath();
               this.ctx.arc(px, py, curRadius * 1.5, 0, Math.PI * 2);
               this.ctx.fill();
-
-              // Radial flame particles trailing behind
-              if (Math.random() < 0.65) {
-                if (this.particles.length > 140) this.particles.shift();
-                const flareA = Math.random() * Math.PI * 2;
-                this.particles.push({
-                  x: p.x + Math.cos(flareA) * (curRadius * 0.4),
-                  y: p.y + Math.sin(flareA) * (curRadius * 0.4),
-                  vx: -p.vx * 0.15 + (Math.random() - 0.5) * 30,
-                  vy: -p.vy * 0.15 + (Math.random() - 0.5) * 30,
-                  color: Math.random() < 0.55 ? '#f59e0b' : '#ef4444',
-                  life: 0.25, maxLife: 0.25, size: 3.5
-                });
-              }
-            } else if (p.type === 'acid' || p.color === '#22c55e' || p.color === '#86efac') {
-              // ACID BLOB: Bubbling corrosive venom blob
-              const aGrad = this.ctx.createRadialGradient(px, py, 1, px, py, p.radius * 1.4);
-              aGrad.addColorStop(0, '#86efac');
-              aGrad.addColorStop(0.6, '#22c55e');
-              aGrad.addColorStop(1, 'rgba(20, 83, 45, 0)');
-              this.ctx.fillStyle = aGrad;
-              this.ctx.shadowColor = '#22c55e';
-              this.ctx.shadowBlur = 15;
+              this.ctx.fillStyle = '#f97316';
               this.ctx.beginPath();
-              this.ctx.arc(px, py, p.radius * 1.3, 0, Math.PI * 2);
+              this.ctx.arc(px, py, curRadius, 0, Math.PI * 2);
+              this.ctx.fill();
+              this.ctx.fillStyle = '#fef08a';
+              this.ctx.beginPath();
+              this.ctx.arc(px, py, curRadius * 0.5, 0, Math.PI * 2);
+              this.ctx.fill();
+            } else if (p.type === 'acid' || p.color === '#22c55e' || p.color === '#86efac') {
+              this.ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
+              this.ctx.beginPath();
+              this.ctx.arc(px, py, p.radius * 1.4, 0, Math.PI * 2);
+              this.ctx.fill();
+              this.ctx.fillStyle = '#22c55e';
+              this.ctx.beginPath();
+              this.ctx.arc(px, py, p.radius, 0, Math.PI * 2);
+              this.ctx.fill();
+              this.ctx.fillStyle = '#86efac';
+              this.ctx.beginPath();
+              this.ctx.arc(px, py, p.radius * 0.5, 0, Math.PI * 2);
               this.ctx.fill();
             } else {
-              // ARCHMAGE SPELL ORB: Layered glowing core with 2 orbiting spark motes and fading tail
               const pulse = 1 + Math.sin(this.animTime * 18) * 0.12;
               const coreRadius = p.radius * pulse;
-
-              // Outer radiant aura
-              const oGrad = this.ctx.createRadialGradient(px, py, 1, px, py, coreRadius * 1.6);
-              oGrad.addColorStop(0, '#ffffff');
-              oGrad.addColorStop(0.4, p.color || '#38bdf8');
-              oGrad.addColorStop(1, 'rgba(0,0,0,0)');
-              this.ctx.fillStyle = oGrad;
-              this.ctx.shadowColor = p.color || '#38bdf8';
-              this.ctx.shadowBlur = 18;
+              this.ctx.fillStyle = 'rgba(56, 189, 248, 0.3)';
               this.ctx.beginPath();
               this.ctx.arc(px, py, coreRadius * 1.4, 0, Math.PI * 2);
               this.ctx.fill();
-
-              // Layered white-hot inner core
+              this.ctx.fillStyle = p.color || '#38bdf8';
+              this.ctx.beginPath();
+              this.ctx.arc(px, py, coreRadius * 0.9, 0, Math.PI * 2);
+              this.ctx.fill();
               this.ctx.fillStyle = '#ffffff';
               this.ctx.beginPath();
-              this.ctx.arc(px, py, coreRadius * 0.5, 0, Math.PI * 2);
+              this.ctx.arc(px, py, coreRadius * 0.45, 0, Math.PI * 2);
               this.ctx.fill();
-
-              // 2 Orbiting spark motes
-              for (let m = 0; m < 2; m++) {
-                const moteA = this.animTime * 14 + (m * Math.PI);
-                const mx = px + Math.cos(moteA) * (coreRadius * 1.5);
-                const my = py + Math.sin(moteA) * (coreRadius * 1.5);
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.shadowColor = '#38bdf8';
-                this.ctx.shadowBlur = 8;
-                this.ctx.beginPath();
-                this.ctx.arc(mx, my, 2.2, 0, Math.PI * 2);
-                this.ctx.fill();
-              }
-
-              // Fading tail motes
-              if (Math.random() < 0.6) {
-                if (this.particles.length > 140) this.particles.shift();
-                this.particles.push({
-                  x: p.x - p.vx * 0.02,
-                  y: p.y - p.vy * 0.02,
-                  vx: -p.vx * 0.05 + (Math.random() - 0.5) * 10,
-                  vy: -p.vy * 0.05 + (Math.random() - 0.5) * 10,
-                  color: p.color || '#38bdf8',
-                  life: 0.2, maxLife: 0.2, size: 2.2
-                });
-              }
             }
             this.ctx.restore();
           });
@@ -4796,32 +4656,28 @@
           this.ctx.save();
           if (this.spawnGraceTimer > 0) {
             this.ctx.strokeStyle = '#38bdf8';
-            this.ctx.shadowColor = '#00f0ff';
-            this.ctx.shadowBlur = 20;
+            // shadowBlur removed
             this.ctx.lineWidth = 3;
             this.ctx.beginPath();
             this.ctx.arc(plX, plY, 26 + Math.sin(this.animTime * 20) * 2, 0, Math.PI * 2);
             this.ctx.stroke();
           } else if (this.player.auraState === 'DIABETIC_RAGE') {
             this.ctx.strokeStyle = '#ef4444';
-            this.ctx.shadowColor = '#f59e0b';
-            this.ctx.shadowBlur = 22;
+            // shadowBlur removed
             this.ctx.lineWidth = 3.5;
             this.ctx.beginPath();
             this.ctx.arc(plX, plY, 24 + Math.sin(this.animTime * 18) * 3, 0, Math.PI * 2);
             this.ctx.stroke();
           } else if (this.player.auraState === 'SWEET_SPOT') {
             this.ctx.strokeStyle = '#00f0ff';
-            this.ctx.shadowColor = '#d946ef';
-            this.ctx.shadowBlur = 18;
+            // shadowBlur removed
             this.ctx.lineWidth = 2.5;
             this.ctx.beginPath();
             this.ctx.arc(plX, plY, 22 + Math.sin(this.animTime * 12) * 2, 0, Math.PI * 2);
             this.ctx.stroke();
           } else if (this.player.auraState === 'SUGAR_CRASH') {
             this.ctx.strokeStyle = '#64748b';
-            this.ctx.shadowColor = '#475569';
-            this.ctx.shadowBlur = 12;
+            // shadowBlur removed
             this.ctx.lineWidth = 2;
             this.ctx.beginPath();
             this.ctx.arc(plX, plY, 20, 0, Math.PI * 2);
@@ -4890,10 +4746,11 @@
             ft.life -= dt;
             this.ctx.save();
             this.ctx.font = `bold ${ft.size}px JetBrains Mono`;
-            this.ctx.fillStyle = ft.color;
             this.ctx.textAlign = 'center';
-            this.ctx.shadowColor = '#000';
-            this.ctx.shadowBlur = 5;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2.5;
+            this.ctx.strokeText(ft.text, ft.x - this.cam.x, ft.y - this.cam.y);
+            this.ctx.fillStyle = ft.color;
             this.ctx.fillText(ft.text, ft.x - this.cam.x, ft.y - this.cam.y);
             this.ctx.restore();
             if (ft.life <= 0) this.floatingTexts.splice(i, 1);
@@ -4907,10 +4764,10 @@
       }
 
       renderMinimapRadar() {
-        const mw = 88;
-        const mh = 88;
-        const mx = 480 - mw - 8;
-        const my = 8;
+        const mw = 72;
+        const mh = 72;
+        const mx = 480 - mw - 6;
+        const my = 6;
         const scale = mw / WORLD_SIZE;
 
         this.ctx.save();
@@ -5025,6 +4882,7 @@
 
       triggerVictory() {
         SFX.victory();
+        const score = 5000 + this.runStats.kills * 200 + this.runStats.gold * 2;
         this.saveRun('CLEARED');
 
         document.getElementById('gameover-icon').innerText = '👑';
@@ -5074,54 +4932,70 @@
 
       updateHUD() {
         if (!this.player) return;
-        const hpPct = Math.max(0, (this.player.hp / this.player.maxHp) * 100);
-        document.getElementById('hp-bar').style.width = `${hpPct}%`;
-        document.getElementById('ui-hp-text').innerText = `${Math.ceil(this.player.hp)}`;
+        if (!this.dom) this.cacheDOM();
 
-        const mpPct = Math.max(0, (this.player.mp / this.player.maxMp) * 100);
-        document.getElementById('mp-bar').style.width = `${mpPct}%`;
-
-        const stamPct = Math.max(0, (this.player.stamina / this.player.maxStamina) * 100);
-        document.getElementById('stam-bar').style.width = `${stamPct}%`;
-
-        const sugarEl = document.getElementById('ui-sugar-text');
-        const auraEl = document.getElementById('ui-aura-state');
-        const badgeEl = document.getElementById('ui-sugar-badge');
-        const bannerEl = document.getElementById('sugar-rush-banner');
-
-        if (sugarEl) sugarEl.innerText = `SUGAR: ${Math.round(this.player.sugarLevel)}%`;
-
-        if (this.player.auraState === 'DIABETIC_RAGE') {
-          auraEl.innerText = '🔥 DIABETIC RAGE (2.5x DMG)';
-          auraEl.className = 'text-red-400 font-bold animate-pulse';
-          badgeEl.className = 'hidden md:flex items-center gap-1.5 px-2 py-0.5 bg-red-950/80 border border-red-500 rounded text-[10px]';
-          bannerEl.innerText = '🔥 DIABETIC RAGE! 2.5x DAMAGE • ZERO STAMINA COST • -3 HP/s 🔥';
-          bannerEl.className = 'absolute bottom-20 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-red-600/90 text-white font-extrabold text-[10px] rounded-full shadow-lg z-20 animate-pulse tracking-wide font-cinzel text-center';
-          bannerEl.style.display = 'block';
-        } else if (this.player.auraState === 'SWEET_SPOT') {
-          auraEl.innerText = '✨ SWEET SPOT (+20% SPD)';
-          auraEl.className = 'text-cyan-400 font-bold';
-          badgeEl.className = 'hidden md:flex items-center gap-1.5 px-2 py-0.5 bg-cyan-950/80 border border-cyan-500 rounded text-[10px]';
-          bannerEl.innerText = '✨ SWEET SPOT! +20% ATK SPEED • +50% STAMINA REGEN ✨';
-          bannerEl.className = 'absolute bottom-20 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-cyan-500/90 text-black font-extrabold text-[10px] rounded-full shadow-lg z-20 animate-pulse tracking-wide font-cinzel text-center';
-          bannerEl.style.display = 'block';
-        } else if (this.player.auraState === 'SUGAR_CRASH') {
-          auraEl.innerText = '💀 SUGAR CRASH (NO REGEN)';
-          auraEl.className = 'text-slate-400 font-bold';
-          badgeEl.className = 'hidden md:flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-600 rounded text-[10px]';
-          bannerEl.innerText = '💀 SUGAR CRASH! STAMINA RECOVERY HALTED 💀';
-          bannerEl.className = 'absolute bottom-20 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-slate-700/90 text-slate-200 font-extrabold text-[10px] rounded-full shadow-lg z-20 tracking-wide font-cinzel text-center';
-          bannerEl.style.display = 'block';
-        } else {
-          auraEl.innerText = 'Normal';
-          auraEl.className = 'text-slate-400 font-cinzel';
-          badgeEl.className = 'hidden md:flex items-center gap-1.5 px-2 py-0.5 bg-black/60 border border-slate-700 rounded text-[10px]';
-          bannerEl.style.display = 'none';
+        const hp = Math.ceil(this.player.hp);
+        if (this.lastHUD.hp !== hp || this.lastHUD.maxHp !== this.player.maxHp) {
+          this.lastHUD.hp = hp;
+          this.lastHUD.maxHp = this.player.maxHp;
+          const hpPct = Math.max(0, (this.player.hp / this.player.maxHp) * 100);
+          if (this.dom.hpBar) this.dom.hpBar.style.width = `${hpPct}%`;
+          if (this.dom.hpText) this.dom.hpText.textContent = `${hp}`;
         }
 
-        document.getElementById('ui-sips-count-top').innerText = `${this.player.sips}/${this.player.maxSips}`;
-        document.getElementById('float-sip-badge').innerText = this.player.sips;
-        document.getElementById('ui-floor-text').innerText = this.gameMode === 'arena' ? '50-Gladiator Colosseum' : `B${this.currentFloor}: ${this.dungeon.biomeName}`;
+        const mp = Math.ceil(this.player.mp);
+        if (this.lastHUD.mp !== mp) {
+          this.lastHUD.mp = mp;
+          if (this.dom.mpBar) this.dom.mpBar.style.width = `${Math.max(0, (this.player.mp / this.player.maxMp) * 100)}%`;
+        }
+
+        const stam = Math.ceil(this.player.stamina);
+        if (this.lastHUD.stam !== stam) {
+          this.lastHUD.stam = stam;
+          if (this.dom.stamBar) this.dom.stamBar.style.width = `${Math.max(0, (this.player.stamina / this.player.maxStamina) * 100)}%`;
+        }
+
+        const sugar = Math.round(this.player.sugarLevel);
+        const aura = this.player.auraState;
+        if (this.lastHUD.sugar !== sugar || this.lastHUD.aura !== aura) {
+          this.lastHUD.sugar = sugar;
+          this.lastHUD.aura = aura;
+          if (this.dom.sugarText) this.dom.sugarText.textContent = `${sugar}%`;
+          if (this.dom.auraText) {
+            if (aura === 'DIABETIC_RAGE') {
+              this.dom.auraText.textContent = 'RAGE (2.5x)';
+              this.dom.auraText.className = 'text-red-400 font-bold';
+              this.dom.sugarBadge.className = 'hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-red-950/80 border border-red-500 rounded text-[9px]';
+              this.showToast('🔥 DIABETIC RAGE! 2.5x DAMAGE • ZERO STAMINA COST', 'text-red-400 border-red-500');
+            } else if (aura === 'SWEET_SPOT') {
+              this.dom.auraText.textContent = 'SWEET (+20%)';
+              this.dom.auraText.className = 'text-cyan-400 font-bold';
+              this.dom.sugarBadge.className = 'hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-cyan-950/80 border border-cyan-500 rounded text-[9px]';
+              this.showToast('✨ SWEET SPOT! +20% SPEED • +50% STAMINA REGEN', 'text-cyan-400 border-cyan-500');
+            } else if (aura === 'SUGAR_CRASH') {
+              this.dom.auraText.textContent = 'CRASH';
+              this.dom.auraText.className = 'text-slate-400 font-bold';
+              this.dom.sugarBadge.className = 'hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-[9px]';
+              this.showToast('💀 SUGAR CRASH! STAMINA RECOVERY HALTED', 'text-slate-400 border-slate-600');
+            } else {
+              this.dom.auraText.textContent = 'Normal';
+              this.dom.auraText.className = 'text-slate-400 font-cinzel';
+              this.dom.sugarBadge.className = 'hidden sm:flex items-center gap-1 px-1.5 py-0.5 bg-black/70 border border-slate-700 rounded text-[9px]';
+            }
+          }
+        }
+
+        if (this.lastHUD.sips !== this.player.sips) {
+          this.lastHUD.sips = this.player.sips;
+          if (this.dom.sipsCountTop) this.dom.sipsCountTop.textContent = `${this.player.sips}/${this.player.maxSips}`;
+          if (this.dom.floatSipBadge) this.dom.floatSipBadge.textContent = `${this.player.sips}`;
+        }
+
+        const floorKey = this.gameMode === 'arena' ? 'arena' : `B${this.currentFloor}`;
+        if (this.lastHUD.floor !== floorKey) {
+          this.lastHUD.floor = floorKey;
+          if (this.dom.floorText) this.dom.floorText.textContent = this.gameMode === 'arena' ? '50-Gladiator Colosseum' : `B${this.currentFloor}: ${this.dungeon.biomeName}`;
+        }
       }
 
       updateGladiatorsLeft() {
@@ -5129,22 +5003,31 @@
       }
 
       addCombatLog(msg, colorClass = 'text-slate-300') {
-        const log = document.getElementById('combat-log');
+        const log = (this.dom && this.dom.combatLog) || document.getElementById('combat-log');
+        if (!log) return;
         const line = document.createElement('div');
-        line.className = `${colorClass} leading-tight`;
+        line.className = `bg-black/85 px-1.5 py-0.5 rounded border border-slate-800/80 ${colorClass} text-[8px] leading-tight transition-opacity duration-300`;
         line.innerHTML = msg;
         log.appendChild(line);
-        while (log.children.length > 5) log.removeChild(log.firstChild);
+        while (log.children.length > 2) log.removeChild(log.firstChild);
+        setTimeout(() => {
+          line.style.opacity = '0';
+          setTimeout(() => { if (line.parentElement) line.remove(); }, 300);
+        }, 2200);
       }
 
       addArenaKillfeed(killer, victim) {
-        const kf = document.getElementById('arena-killfeed');
+        const kf = (this.dom && this.dom.arenaKillfeed) || document.getElementById('arena-killfeed');
+        if (!kf) return;
         const line = document.createElement('div');
-        line.className = 'bg-black/80 px-1.5 py-0.5 rounded border border-slate-800 text-slate-300 shadow text-[9px]';
+        line.className = 'bg-black/85 px-1.5 py-0.5 rounded border border-slate-800 text-slate-300 text-[8px] transition-opacity duration-300';
         line.innerHTML = `⚔️ <b class="text-rose-400">${killer}</b> eliminated <span class="text-slate-400">${victim}</span>`;
         kf.appendChild(line);
-        while (kf.children.length > 4) kf.removeChild(kf.firstChild);
-        setTimeout(() => { if (line.parentElement) line.remove(); }, 3500);
+        while (kf.children.length > 2) kf.removeChild(kf.firstChild);
+        setTimeout(() => {
+          line.style.opacity = '0';
+          setTimeout(() => { if (line.parentElement) line.remove(); }, 300);
+        }, 2000);
       }
 
       openInventory() {
@@ -5227,6 +5110,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       game = new GameEngine();
     });
+  
   </script>
 </body>
 </html>
