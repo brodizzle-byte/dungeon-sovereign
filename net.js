@@ -201,6 +201,26 @@
       }
       if (ran > 8) break;                 // catching up, but not in one frame
     }
+    // Client-side prediction for visual rendering to mask network delay
+    if (game.player && !net.over) {
+      const K = game.keys || {};
+      const T = game.touchMovement || {};
+      let dx = 0, dy = 0;
+      if (K.w || K.arrowup) dy -= 1;
+      if (K.s || K.arrowdown) dy += 1;
+      if (K.a || K.arrowleft) dx -= 1;
+      if (K.d || K.arrowright) dx += 1;
+      if (T.active) { dx += T.x; dy += T.y; }
+      const mag = Math.hypot(dx, dy);
+      if (mag > 0.05) {
+        const pSpeed = (game.player.speed || 100) * (net.delay * DT * 0.4);
+        game.player.predOffsetX = (dx / mag) * pSpeed;
+        game.player.predOffsetY = (dy / mag) * pSpeed;
+      } else {
+        game.player.predOffsetX = 0;
+        game.player.predOffsetY = 0;
+      }
+    }
     if (!ran) game.render(real);           // waiting on somebody
   }
 

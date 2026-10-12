@@ -1,0 +1,22 @@
+{
+  "name": "dungeon-sovereign",
+  "version": "7.0.0",
+  "description": "Dungeon Sovereign v7.0: 2.5D Overhaul, Lockstep Unity & Synergies",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node replay/checks.js && node replay/lockstep.js && node replay/parity.js",
+    "test:checks": "node replay/checks.js",
+    "test:lockstep": "node replay/lockstep.js",
+    "test:parity": "node replay/parity.js"
+  },
+  "keywords": [
+    "game",
+    "dungeon-crawler",
+    "lockstep",
+    "canvas",
+    "deterministic"
+  ],
+  "author": "Brodie Villeneuve <brodievilleneuve@gmail.com>",
+  "license": "MIT"
+}

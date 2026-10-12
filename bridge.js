@@ -286,6 +286,7 @@
     g.enemies = []; g.pendingEnemies = []; g.projectiles = []; g.shockwaves = [];
     g.hazardPuddles = []; g.particles = []; g.bloodDecals = []; g.weaponSwings = [];
     g.spawnBeacons = []; g.activeBoss = null;
+    g.pedestals = []; g.activePedestal = null;
     g.stormRadius = 450; g.stormCenter = { x: 512, y: 512 }; g.stormTimer = 30;
     g.totalArenaCompetitors = 50; g.gladiatorsAlive = 50; g.queuedGladiators = 30; g.reinforcementTimer = 0;
     installTimers();
@@ -442,9 +443,18 @@
     return [run.tick, p.hp, p.x, p.y, p.sips, rs.kills, rs.gold, g.currentFloor, alive,
             g.frameCount, run.rngCalls, g.animTime].join('|');
   }
+  let parityWorker = null;
+  if (IS_PLAY && typeof window !== 'undefined' && typeof Worker !== 'undefined') {
+    try { parityWorker = new Worker('worker-parity.js'); } catch (e) {}
+  }
+
   function checkpoint(g) {
     const st = stateString(g);
-    run.checkpoints.push(DEBUG_STATE ? [run.tick, fnv1a(st), st] : [run.tick, fnv1a(st)]);
+    const hash = fnv1a(st);
+    if (parityWorker) {
+      parityWorker.postMessage({ type: 'checkpoint', tick: run.tick, stateStr: st, debug: DEBUG_STATE });
+    }
+    run.checkpoints.push(DEBUG_STATE ? [run.tick, hash, st] : [run.tick, hash]);
   }
   function tick(g, entry) {
     run.tick++;

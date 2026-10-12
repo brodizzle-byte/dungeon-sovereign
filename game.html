@@ -2196,6 +2196,9 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             if (e.key === 'k' || e.key === 'K') this.playerSkill();
             if (e.key === 'l' || e.key === 'L') this.playerDodge();
             if (e.key === 'h' || e.key === 'H') this.playerSip();
+            if (e.key === 'e' || e.key === 'E') {
+              if (this.activePedestal) this.claimPedestal(this.activePedestal);
+            }
             if (e.key === 'i' || e.key === 'I') {
               this.openInventory();
               this.setState(STATES.INFUSION);
@@ -2727,6 +2730,18 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           attackBuffered: false,
           comboStage: 0,
           comboTimer: 0,
+          z: 0,
+          vz: 0,
+          synergies: { brutality: 1, tactics: 1, survival: 1 },
+          equipment: {
+            weaponMain: curWeapon,
+            weaponOffhand: { id: 'sovereign_buckler', name: 'Sovereign Buckler', pillar: 'survival', def: 2 },
+            skill1: { id: cls.skillName || 'cleave', name: cls.skillName || 'Sovereign Cleave', pillar: 'brutality' },
+            skill2: { id: 'void_dash', name: 'Abyssal Dash', pillar: 'tactics' },
+            relic1: { id: 'obsidian_core', name: 'Obsidian Core', pillar: 'brutality', affix: 'spike_burst' },
+            relic2: { id: 'storm_amber', name: 'Storm Amber', pillar: 'tactics', affix: 'thunderstruck' },
+            relic3: { id: 'basalt_plating', name: 'Basalt Plating', pillar: 'survival', affix: 'toxic_trail' },
+          },
           inventory: [
             { name: curWeapon.name, sprite: cls.sprite, type: 'weapon' },
             { name: 'Custom Sovereign Dye', sprite: cls.sprite, type: 'outfit' }
@@ -2967,6 +2982,8 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         this.hitStopTimer = 0;
         this.weaponSwings = [];
         this.activeBoss = null;
+        this.pedestals = this.generatePedestals(floorNum);
+        this.activePedestal = null;
 
         this.spawnGraceTimer = 1.5;
 
@@ -3638,6 +3655,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
       knockback(e, angle, px) {
         e.kx = (e.kx || 0) + Math.cos(angle) * px * 6;
         e.ky = (e.ky || 0) + Math.sin(angle) * px * 6;
+        if (px >= 30) e.vz = Math.min(100, (e.vz || 0) + px * 1.5);
       }
 
       // Drain that impulse, one entity, one tick. Per-axis wall tests, the
@@ -3645,6 +3663,11 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
       // knockbacks in the game skipped the wall check entirely and could
       // shove an enemy into solid rock.
       stepKnockback(e, dt) {
+        if ((e.z || 0) > 0 || (e.vz || 0) !== 0) {
+          e.vz = (e.vz || 0) - 480 * dt;
+          e.z = Math.max(0, (e.z || 0) + e.vz * dt);
+          if (e.z === 0) e.vz = 0;
+        }
         if (!e.kx && !e.ky) return;
         const nx = e.x + e.kx * dt;
         const ny = e.y + e.ky * dt;
@@ -4059,6 +4082,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           this.player.dodgeTimer -= dt;
           const dodgeProg = 1 - (this.player.dodgeTimer / this.player.dodgeDuration);
           this.player.dodgeProgress = dodgeProg;
+          this.player.z = Math.sin(Math.max(0, Math.min(1, dodgeProg)) * Math.PI) * 12;
           const dSpeed = currentSpeed * 2.2;
           this.player.vx = Math.cos(this.player.dodgeAngle) * dSpeed;
           this.player.vy = Math.sin(this.player.dodgeAngle) * dSpeed;
@@ -4081,6 +4105,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
           if (this.player.dodgeTimer <= 0) {
             this.player.isDodging = false;
             this.player.dodgeProgress = 0;
+            this.player.z = 0;
           }
         } else {
           const moveAngle = this.getMoveAngle();
@@ -4133,6 +4158,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
         }
 
         if (this.updateAllPlayers(dt) === false) return;
+        this.updatePedestals(dt);
 
         // Story Portal Exit Trigger (Floor 10 Win Condition)
         if (this.gameMode === 'story' && !this.activeBoss && !this.isTransitioningFloor) {
@@ -5267,11 +5293,68 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             this.ctx.restore();
           });
 
+          // Dynamic Drop Shadows for all combatants & entities (2.5D floor projection)
+          const allEntities = [];
+          if (this.player) allEntities.push(this.player);
+          for (let si = 0; si < this.players.length; si++) {
+            const o = this.players[si];
+            if (o && o !== this.player && o.hp > 0) allEntities.push(o);
+          }
+          for (let i = 0; i < this.enemies.length; i++) {
+            const en = this.enemies[i];
+            if (!en.dead) allEntities.push(en);
+          }
+          for (let i = 0; i < (this.pedestals || []).length; i++) {
+            const ped = this.pedestals[i];
+            if (!ped.claimed) allEntities.push(ped);
+          }
+
+          // Draw grounded drop shadows
+          this.ctx.save();
+          for (let i = 0; i < allEntities.length; i++) {
+            const ent = allEntities[i];
+            const sx = ent.x - this.cam.x;
+            const sy = ent.y - this.cam.y;
+            if (sx < -40 || sy < -40 || sx > 520 || sy > 520) continue;
+            const zH = ent.z || 0;
+            const shadowScale = Math.max(0.3, 1 - zH / 80);
+            const shadowAlpha = Math.max(0.12, 0.38 * shadowScale);
+            const rad = (ent.radius || 14) * 0.9;
+            this.ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
+            this.ctx.beginPath();
+            this.ctx.ellipse(sx, sy + (ent.radius ? ent.radius * 0.6 : 8), rad * shadowScale, (rad * 0.45) * shadowScale, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+          }
+          this.ctx.restore();
+
+          // Draw Treasure Pedestals
+          for (let i = 0; i < (this.pedestals || []).length; i++) {
+            const ped = this.pedestals[i];
+            if (ped.claimed) continue;
+            const px = ped.x - this.cam.x;
+            const py = ped.y - this.cam.y;
+            if (px < -30 || py < -30 || px > 510 || py > 510) continue;
+            this.ctx.save();
+            this.ctx.fillStyle = '#1e293b';
+            this.ctx.strokeStyle = ped.color;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.fillRect(px - 10, py - 6, 20, 16);
+            this.ctx.strokeRect(px - 10, py - 6, 20, 16);
+            const pBob = Math.sin(this.animTime * 4 + ped.x) * 3;
+            this.ctx.fillStyle = ped.color;
+            this.ctx.shadowColor = ped.color;
+            this.ctx.shadowBlur = 10;
+            this.ctx.beginPath();
+            this.ctx.arc(px, py - 14 + pBob, 6, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+          }
+
           // Draw Enemies & Gladiators
           for (let i = 0; i < this.enemies.length; i++) {
             const enemy = this.enemies[i];
             const ex = enemy.x - this.cam.x;
-            const ey = enemy.y - this.cam.y;
+            const ey = (enemy.y - (enemy.z || 0)) - this.cam.y;
             const bobY = Math.sin(this.animTime * 8 + enemy.x) * 2;
 
             // Windup telegraph: a ring that closes onto the hostile as the
@@ -5452,7 +5535,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
 
           // Draw Player with Procedural Bobbing, Inertial Tilt, Cape, and Roll
           const plX = this.player.x - this.cam.x;
-          const plY = this.player.y - this.cam.y;
+          const plY = (this.player.y - (this.player.z || 0)) - this.cam.y;
           const isMoving = (this.player.vx !== 0 || this.player.vy !== 0);
           const moveSpeed = isMoving ? 1 : 0;
           // animTime, not performance.now(). The simulation advances this by
@@ -5600,6 +5683,7 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             this.ctx.restore();
           }
 
+          this.renderCanvasHUD();
           this.renderMinimapRadar();
 
           // Restore camera screen shake transform
@@ -6058,6 +6142,253 @@ body.in-menu>header,body.in-menu>main,body.in-menu>footer{visibility:hidden}
             </div>
           `;
         }
+      }
+
+      generatePedestals(floorNum) {
+        if (!this.dungeon || !this.dungeon.rooms || this.dungeon.rooms.length === 0) return [];
+        const room = this.dungeon.rooms.length > 1 ? this.dungeon.rooms[1] : this.dungeon.rooms[0];
+        const cx = room.cx * TILE_SIZE + 16;
+        const cy = room.cy * TILE_SIZE + 16;
+        return [
+          {
+            id: 'ped_brutality_' + floorNum,
+            pillar: 'brutality',
+            color: '#ef4444',
+            name: 'Crimson Vanguard Blade',
+            slot: 'weaponMain',
+            stats: { atk: 4 + floorNum * 2, crit: 5 },
+            affix: { name: 'Spike Burst', desc: 'Slain foes erupt with bone spikes' },
+            x: cx - 36,
+            y: cy,
+            z: 0,
+            radius: 12,
+            claimed: false
+          },
+          {
+            id: 'ped_tactics_' + floorNum,
+            pillar: 'tactics',
+            color: '#a855f7',
+            name: 'Obsidian Arcane Focus',
+            slot: 'weaponOffhand',
+            stats: { cdr: 15, mp: 15 },
+            affix: { name: 'Thunderstruck', desc: 'Every 4th hit calls ceiling lightning' },
+            x: cx,
+            y: cy,
+            z: 0,
+            radius: 12,
+            claimed: false
+          },
+          {
+            id: 'ped_survival_' + floorNum,
+            pillar: 'survival',
+            color: '#22c55e',
+            name: 'Basalt Sovereign Aegis',
+            slot: 'relic1',
+            stats: { hp: 25 + floorNum * 10, def: 2 },
+            affix: { name: 'Toxic Trail', desc: 'Leaves caustic venom slime on dodge' },
+            x: cx + 36,
+            y: cy,
+            z: 0,
+            radius: 12,
+            claimed: false
+          }
+        ];
+      }
+
+      updatePedestals(dt) {
+        this.activePedestal = null;
+        if (!this.pedestals || !this.player) return;
+        for (let i = 0; i < this.pedestals.length; i++) {
+          const ped = this.pedestals[i];
+          if (ped.claimed) continue;
+          const d = Math.hypot(this.player.x - ped.x, this.player.y - ped.y);
+          if (d < 40) {
+            this.activePedestal = ped;
+            break;
+          }
+        }
+      }
+
+      claimPedestal(ped) {
+        if (!ped || ped.claimed) return;
+        ped.claimed = true;
+        if (!this.player.synergies) this.player.synergies = { brutality: 1, tactics: 1, survival: 1 };
+        this.player.synergies[ped.pillar] = (this.player.synergies[ped.pillar] || 0) + 1;
+        if (ped.stats.atk) this.player.atk += ped.stats.atk;
+        if (ped.stats.hp) { this.player.maxHp += ped.stats.hp; this.player.hp += ped.stats.hp; }
+        if (ped.stats.def) this.player.def += ped.stats.def;
+        if (this.player.equipment) this.player.equipment[ped.slot] = ped;
+        for (let p of (this.pedestals || [])) {
+          p.claimed = true;
+          for (let k = 0; k < 10; k++) {
+            this.fx.push({
+              x: p.x + (Math.random() - 0.5) * 16,
+              y: p.y + (Math.random() - 0.5) * 16,
+              vx: (Math.random() - 0.5) * 40,
+              vy: -30 - Math.random() * 40,
+              color: '#fbbf24',
+              life: 0.5, maxLife: 0.5, size: 3
+            });
+          }
+        }
+        this.spawnFloatingText(this.player.x, this.player.y - 20, `CLAIMED: ${ped.name}!`, ped.color, 14);
+        SFX.powerup();
+      }
+
+      renderCanvasHUD() {
+        if (!this.player) return;
+        const ctx = this.ctx;
+        ctx.save();
+
+        // 1. TOP-LEFT VITALITY & STATUS HUD
+        const hx = 8, hy = 8;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(hx, hy, 105, 18, 4); else ctx.rect(hx, hy, 105, 18);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = 'bold 9px "Cinzel", serif';
+        ctx.fillStyle = '#c084fc';
+        ctx.textAlign = 'left';
+        ctx.fillText(`🏰 B${this.currentFloor}: ${this.dungeon ? this.dungeon.name : 'Catacombs'}`, hx + 5, hy + 12);
+
+        // Health Bar
+        const barY = hy + 22;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(hx, barY, 130, 14, 3); else ctx.rect(hx, barY, 130, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        const hpPct = Math.max(0, Math.min(1, this.player.hp / this.player.maxHp));
+        if (hpPct > 0) {
+          const hpGrad = ctx.createLinearGradient(hx + 1, barY + 1, hx + 128 * hpPct, barY + 1);
+          hpGrad.addColorStop(0, '#dc2626');
+          hpGrad.addColorStop(1, '#f87171');
+          ctx.fillStyle = hpGrad;
+          ctx.fillRect(hx + 1, barY + 1, 128 * hpPct, 12);
+        }
+        ctx.font = 'bold 9px "JetBrains Mono", monospace';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(`HP ${Math.ceil(this.player.hp)} / ${this.player.maxHp}`, hx + 65, barY + 10);
+
+        // MP Bar & Stamina Bar Stacked Cluster
+        const mpY = barY + 17;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(hx, mpY, 60, 8);
+        ctx.strokeStyle = '#0284c7';
+        ctx.strokeRect(hx, mpY, 60, 8);
+        const mpPct = Math.max(0, Math.min(1, this.player.mp / this.player.maxMp));
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(hx + 1, mpY + 1, 58 * mpPct, 6);
+
+        const stmX = hx + 65;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(stmX, mpY, 65, 8);
+        ctx.strokeStyle = '#d97706';
+        ctx.strokeRect(stmX, mpY, 65, 8);
+        const stmPct = Math.max(0, Math.min(1, this.player.stamina / this.player.maxStamina));
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(stmX + 1, mpY + 1, 63 * stmPct, 6);
+
+        // Combo Chain Indicator
+        const comboY = mpY + 17;
+        const stage = this.player.comboStage | 0;
+        const live = this.player.comboTimer > 0;
+        ctx.textAlign = 'left';
+        if (live) {
+          if (stage >= 2) {
+            ctx.font = 'bold 10px "Cinzel", serif';
+            ctx.fillStyle = '#fbbf24';
+            ctx.fillText('★ SOVEREIGN FINISHER ★', hx, comboY);
+          } else {
+            ctx.font = 'bold 10px "JetBrains Mono", monospace';
+            ctx.fillStyle = '#38bdf8';
+            const dots = stage === 0 ? '● ○ ○' : '● ● ○';
+            ctx.fillText(`COMBO: ${dots}`, hx, comboY);
+          }
+        }
+
+        // Synergy Pillar Badges
+        const syn = this.player.synergies || { brutality: 1, tactics: 1, survival: 1 };
+        const synY = live ? comboY + 15 : comboY + 2;
+        ctx.font = 'bold 8px "JetBrains Mono", monospace';
+        ctx.fillStyle = '#ef4444';
+        ctx.fillText(`🔴 BRU:${syn.brutality}`, hx, synY);
+        ctx.fillStyle = '#c084fc';
+        ctx.fillText(`🟣 TAC:${syn.tactics}`, hx + 45, synY);
+        ctx.fillStyle = '#22c55e';
+        ctx.fillText(`🟢 SUR:${syn.survival}`, hx + 90, synY);
+
+        // 2. BOSS HEALTH BAR (when activeBoss exists)
+        if (this.activeBoss && this.activeBoss.hp > 0) {
+          const bx = 100, by = 10, bw = 280, bh = 14;
+          ctx.fillStyle = 'rgba(10, 10, 15, 0.9)';
+          ctx.strokeStyle = '#dc2626';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 4); else ctx.rect(bx, by, bw, bh);
+          ctx.fill();
+          ctx.stroke();
+
+          const bHpPct = Math.max(0, Math.min(1, this.activeBoss.hp / this.activeBoss.maxHp));
+          const bGrad = ctx.createLinearGradient(bx, by, bx + bw, by);
+          bGrad.addColorStop(0, '#7f1d1d');
+          bGrad.addColorStop(0.5, '#dc2626');
+          bGrad.addColorStop(1, '#f59e0b');
+          ctx.fillStyle = bGrad;
+          ctx.fillRect(bx + 1, by + 1, (bw - 2) * bHpPct, bh - 2);
+
+          ctx.font = 'bold 8px "Cinzel", serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${this.activeBoss.name || 'ABYSSAL TITAN'} — ${Math.ceil(this.activeBoss.hp)} HP`, bx + bw / 2, by + 10);
+        }
+
+        // 3. INTERACTIVE TREASURE PEDESTAL TOOLTIP
+        if (this.activePedestal && !this.activePedestal.claimed) {
+          const ped = this.activePedestal;
+          const ptx = 140, pty = 330, ptw = 200, pth = 80;
+          ctx.fillStyle = 'rgba(8, 12, 22, 0.95)';
+          ctx.strokeStyle = ped.color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(ptx, pty, ptw, pth, 6); else ctx.rect(ptx, pty, ptw, pth);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 10px "Cinzel", serif';
+          ctx.fillStyle = ped.color;
+          ctx.fillText(ped.name, ptx + 8, pty + 16);
+
+          ctx.font = '8px "JetBrains Mono", monospace';
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(`Pillar: ${ped.pillar.toUpperCase()} (+1 Synergy)`, ptx + 8, pty + 28);
+
+          ctx.fillStyle = '#e2e8f0';
+          let statStr = '';
+          if (ped.stats.atk) statStr += `+${ped.stats.atk} ATK  `;
+          if (ped.stats.hp) statStr += `+${ped.stats.hp} HP  `;
+          if (ped.stats.def) statStr += `+${ped.stats.def} DEF  `;
+          if (ped.stats.cdr) statStr += `+${ped.stats.cdr}% CDR  `;
+          ctx.fillText(statStr, ptx + 8, pty + 42);
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.fillText(`★ Affix: ${ped.affix.name} (${ped.affix.desc})`, ptx + 8, pty + 56);
+
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 9px "JetBrains Mono", monospace';
+          ctx.fillText(`Press [E] or [TAP] to Claim`, ptx + 8, pty + 72);
+        }
+
+        ctx.restore();
       }
     }
 
