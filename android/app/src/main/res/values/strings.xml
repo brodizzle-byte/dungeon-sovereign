@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dungeon Sovereign</string>
+    <string name="title_activity_main">Dungeon Sovereign</string>
+    <string name="package_name">com.dungeon.sovereign</string>
+    <string name="custom_url_scheme">com.dungeon.sovereign</string>
+</resources>

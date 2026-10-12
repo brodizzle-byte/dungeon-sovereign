@@ -83,5 +83,30 @@ npm run test:parity    # Multi-seed browser vs headless replay gate
 
 ---
 
+## 📱 Native Android APK Packaging
+
+Dungeon Sovereign v7.0 includes a fully configured native Android wrapper and Gradle build pipeline powered by local Android SDK 35 and Capacitor runtime:
+
+```bash
+# Sync game web assets into Android project
+npm run apk:sync
+
+# Assemble signed Debug APK
+npm run apk:debug
+
+# Assemble optimized Release APK
+npm run apk:release
+
+# Assemble both APKs and output to dist-apk/ with SHA-256 hashes
+npm run apk:bundle
+```
+
+Built APK artifacts:
+* **Release APK**: `dist-apk/dungeon-sovereign-v7.0.0-release.apk` (Zip-aligned, v1+v2 signed, ~3.5MB)
+* **Debug APK**: `dist-apk/dungeon-sovereign-v7.0.0-debug.apk` (Zip-aligned, debug signed, ~4.5MB)
+
+---
+
 ## 📜 License
 MIT License. Crafted with precision for the Sovereign guild.
+

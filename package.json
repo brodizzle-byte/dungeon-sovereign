@@ -8,7 +8,11 @@
     "test": "node replay/checks.js && node replay/lockstep.js && node replay/parity.js",
     "test:checks": "node replay/checks.js",
     "test:lockstep": "node replay/lockstep.js",
-    "test:parity": "node replay/parity.js"
+    "test:parity": "node replay/parity.js",
+    "apk:sync": "mkdir -p android/app/src/main/assets/public/shared && cp index.html game.html bridge.js controls.js net.js worker-parity.js android/app/src/main/assets/public/ && cp shared/sim-core.js android/app/src/main/assets/public/shared/ && touch android/app/src/main/assets/public/cordova.js android/app/src/main/assets/public/cordova_plugins.js",
+    "apk:debug": "npm run apk:sync && cd android && ./gradlew assembleDebug && mkdir -p ../dist-apk && cp app/build/outputs/apk/debug/app-debug.apk ../dist-apk/dungeon-sovereign-v7.0.0-debug.apk",
+    "apk:release": "npm run apk:sync && cd android && ./gradlew assembleRelease && mkdir -p ../dist-apk && cp app/build/outputs/apk/release/app-release.apk ../dist-apk/dungeon-sovereign-v7.0.0-release.apk",
+    "apk:bundle": "npm run apk:sync && cd android && ./gradlew assembleRelease assembleDebug && mkdir -p ../dist-apk && cp app/build/outputs/apk/release/app-release.apk ../dist-apk/dungeon-sovereign-v7.0.0-release.apk && cp app/build/outputs/apk/debug/app-debug.apk ../dist-apk/dungeon-sovereign-v7.0.0-debug.apk && cd ../dist-apk && sha256sum dungeon-sovereign-v7.0.0-release.apk dungeon-sovereign-v7.0.0-debug.apk > SHA256SUMS.txt"
   },
   "keywords": [
     "game",
