@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.dungeon.sovereign"
+    namespace "com.brodizzle.dungeonsov"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.dungeon.sovereign"
+        applicationId "com.brodizzle.dungeonsov"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 700

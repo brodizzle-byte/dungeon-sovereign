@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Dungeon Sovereign</string>
     <string name="title_activity_main">Dungeon Sovereign</string>
-    <string name="package_name">com.dungeon.sovereign</string>
-    <string name="custom_url_scheme">com.dungeon.sovereign</string>
+    <string name="package_name">com.brodizzle.dungeonsov</string>
+    <string name="custom_url_scheme">com.brodizzle.dungeonsov</string>
 </resources>
